@@ -1,0 +1,230 @@
+<!DOCTYPE html>
+<html lang="">
+  <head>
+    <meta charset="UTF-8">
+    <link rel="icon" href="/favicon.ico">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>EEHS Dashboard</title>
+
+    <!-- ✅ Script untuk menerapkan favicon dan title dari konfigurasi -->
+    <script>
+      (function() {
+        try {
+          const config = localStorage.getItem('qms_frontend_config_v2')
+          if (config) {
+            const parsed = JSON.parse(config)
+            
+            // Update favicon
+            const link = document.querySelector("link[rel~='icon']")
+            if (link) {
+              if (parsed.faviconDataUrl) {
+                link.href = parsed.faviconDataUrl
+              } else if (parsed.faviconUrl) {
+                link.href = parsed.faviconUrl
+              } else if (parsed.logoDataUrl) {
+                link.href = parsed.logoDataUrl
+              } else if (parsed.logoUrl) {
+                link.href = parsed.logoUrl
+              }
+            }
+            
+            // Update title
+            if (parsed.systemName) {
+              document.title = parsed.systemName
+            }
+          }
+        } catch (e) {
+          console.error('Gagal memuat konfigurasi:', e)
+        }
+      })()
+    </script>
+    
+  <!-- Google Font: Source Sans Pro -->
+  <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Source+Sans+Pro:300,400,400i,700&display=fallback">
+  <!-- Font Awesome -->
+  <link rel="stylesheet" href="/plugins/fontawesome-free/css/all.min.css">
+  <!-- Ionicons -->
+  <link rel="stylesheet" href="https://code.ionicframework.com/ionicons/2.0.1/css/ionicons.min.css">
+  <!-- Tempusdominus Bootstrap 4 -->
+  <link rel="stylesheet" href="/plugins/tempusdominus-bootstrap-4/css/tempusdominus-bootstrap-4.min.css">
+  <!-- iCheck -->
+  <link rel="stylesheet" href="/plugins/icheck-bootstrap/icheck-bootstrap.min.css">
+  <!-- JQVMap -->
+  <link rel="stylesheet" href="/plugins/jqvmap/jqvmap.min.css">
+  <!-- Theme style -->
+  <link rel="stylesheet" href="/css/adminlte.min.css">
+  <link rel="stylesheet" href="/css/adminlte.css">
+  <!-- overlayScrollbars -->
+  <link rel="stylesheet" href="/plugins/overlayScrollbars/css/OverlayScrollbars.min.css">
+  <!-- Daterange picker -->
+  <link rel="stylesheet" href="/plugins/daterangepicker/daterangepicker.css">
+  <!-- summernote -->
+  <link rel="stylesheet" href="/plugins/summernote/summernote-bs4.min.css">
+    <!-- uPlot -->
+  <link rel="stylesheet" href="/plugins/uplot/uPlot.min.css">
+    <!-- Ion Slider -->
+  <link rel="stylesheet" href="/plugins/ion-rangeslider/css/ion.rangeSlider.min.css">
+  <!-- bootstrap slider -->
+  <link rel="stylesheet" href="/plugins/bootstrap-slider/css/bootstrap-slider.min.css">
+   <!-- SweetAlert2 -->
+  <link rel="stylesheet" href="/plugins/sweetalert2-theme-bootstrap-4/bootstrap-4.min.css">
+  <!-- Toastr -->
+  <link rel="stylesheet" href="/plugins/toastr/toastr.min.css">
+
+  <!-- iCheck for checkboxes and radio inputs -->
+  <link rel="stylesheet" href="/plugins/icheck-bootstrap/icheck-bootstrap.min.css">
+  <!-- Bootstrap Color Picker -->
+  <link rel="stylesheet" href="/plugins/bootstrap-colorpicker/css/bootstrap-colorpicker.min.css">
+  <!-- Tempusdominus Bootstrap 4 -->
+  <link rel="stylesheet" href="/plugins/tempusdominus-bootstrap-4/css/tempusdominus-bootstrap-4.min.css">
+  <!-- Select2 -->
+  <link rel="stylesheet" href="/plugins/select2/css/select2.min.css">
+  <link rel="stylesheet" href="/plugins/select2-bootstrap4-theme/select2-bootstrap4.min.css">
+  <!-- Bootstrap4 Duallistbox -->
+  <link rel="stylesheet" href="/plugins/bootstrap4-duallistbox/bootstrap-duallistbox.min.css">
+  <!-- BS Stepper -->
+  <link rel="stylesheet" href="/plugins/bs-stepper/css/bs-stepper.min.css">
+  <!-- dropzonejs -->
+  <link rel="stylesheet" href="/plugins/dropzone/min/dropzone.min.css">
+  <!-- Theme style -->
+
+  <!-- CodeMirror -->
+  <link rel="stylesheet" href="/plugins/codemirror/codemirror.css">
+  <link rel="stylesheet" href="/plugins/codemirror/theme/monokai.css">
+  <!-- SimpleMDE -->
+  <link rel="stylesheet" href="/plugins/simplemde/simplemde.min.css">
+    <!-- DataTables -->
+  <link rel="stylesheet" href="/plugins/datatables-bs4/css/dataTables.bootstrap4.min.css">
+  <link rel="stylesheet" href="/plugins/datatables-responsive/css/responsive.bootstrap4.min.css">
+  <link rel="stylesheet" href="/plugins/datatables-buttons/css/buttons.bootstrap4.min.css">
+   <!-- jsGrid -->
+  <link rel="stylesheet" href="/plugins/jsgrid/jsgrid.min.css">
+  <link rel="stylesheet" href="/plugins/jsgrid/jsgrid-theme.min.css">
+    <!-- fullCalendar -->
+  <link rel="stylesheet" href="/plugins/fullcalendar/main.css">
+   <!-- Ekko Lightbox -->
+  <link rel="stylesheet" href="/plugins/ekko-lightbox/ekko-lightbox.css">
+   <!-- flag-icon-css -->
+  <link rel="stylesheet" href="/plugins/flag-icon-css/css/flag-icon.min.css">
+    <!-- pace-progress -->
+  <link rel="stylesheet" href="/plugins/pace-progress/themes/black/pace-theme-flat-top.css">
+  <!-- FixedHeader DataTables -->
+<link rel="stylesheet" href="/plugins/datatables-fixedheader/css/fixedHeader.bootstrap4.min.css">
+  
+  </head>
+
+  <body class="hold-transition sidebar-mini layout-fixed">
+    <div id="app"></div>
+    
+  <!-- jQuery -->
+<script src="/plugins/jquery/jquery.min.js"></script>
+<!-- jQuery UI 1.11.4 -->
+<script src="/plugins/jquery-ui/jquery-ui.min.js"></script>
+<!-- Resolve conflict in jQuery UI tooltip with Bootstrap tooltip -->
+<script>
+  $.widget.bridge('uibutton', $.ui.button)
+</script>
+<!-- Bootstrap 4 -->
+<script src="/plugins/bootstrap/js/bootstrap.bundle.min.js"></script>
+<!-- ChartJS -->
+<script src="/plugins/chart.js/Chart.min.js"></script>
+<!-- Sparkline (disabled karena menyebabkan error) -->
+<!-- <script src="/plugins/sparklines/sparkline.js"></script> -->
+<!-- JQVMap (disabled karena menyebabkan error) -->
+<!-- <script src="/plugins/jqvmap/jquery.vmap.min.js"></script> -->
+<!-- <script src="/plugins/jqvmap/maps/jquery.vmap.usa.js"></script> -->
+<!-- jQuery Knob Chart -->
+<script src="/plugins/jquery-knob/jquery.knob.min.js"></script>
+<!-- daterangepicker -->
+<script src="/plugins/moment/moment.min.js"></script>
+<script src="/plugins/daterangepicker/daterangepicker.js"></script>
+<!-- Tempusdominus Bootstrap 4 -->
+<script src="/plugins/tempusdominus-bootstrap-4/js/tempusdominus-bootstrap-4.min.js"></script>
+<!-- Summernote -->
+<script src="/plugins/summernote/summernote-bs4.min.js"></script>
+<!-- overlayScrollbars -->
+<script src="/plugins/overlayScrollbars/js/jquery.overlayScrollbars.min.js"></script>
+<!-- AdminLTE App -->
+<script src="/js/adminlte.js"></script>
+<!-- AdminLTE for demo purposes -->
+<!-- <script src="/js/demo.js"></script> -->
+<!-- AdminLTE dashboard demo (This is only for demo purposes) -->
+<!-- <script src="/js/pages/dashboard.js"></script> -->
+<!-- <script src="/js/pages/dashboard3.js"></script> -->
+<!-- FLOT CHARTS -->
+<script src="/plugins/flot/jquery.flot.js"></script>
+<!-- FLOT RESIZE PLUGIN - allows the chart to redraw when the window is resized -->
+<script src="/plugins/flot/plugins/jquery.flot.resize.js"></script>
+<!-- FLOT PIE PLUGIN - also used to draw donut charts -->
+<script src="/plugins/flot/plugins/jquery.flot.pie.js"></script>
+<!-- jQuery Knob -->
+<script src="/plugins/jquery-knob/jquery.knob.min.js"></script>
+<!-- Sparkline -->
+<script src="/plugins/sparklines/sparkline.js"></script>
+<!-- uPlot -->
+<script src="/plugins/uplot/uPlot.iife.min.js"></script>
+<!-- Ion Slider -->
+<script src="/plugins/ion-rangeslider/js/ion.rangeSlider.min.js"></script>
+<!-- Bootstrap slider -->
+<script src="/plugins/bootstrap-slider/bootstrap-slider.min.js"></script>
+<!-- SweetAlert2 -->
+<script src="/plugins/sweetalert2/sweetalert2.min.js"></script>
+<!-- Toastr -->
+<script src="/plugins/toastr/toastr.min.js"></script>
+<!-- bs-custom-file-input -->
+<script src="/plugins/bs-custom-file-input/bs-custom-file-input.min.js"></script>
+<!-- Select2 -->
+<script src="/plugins/select2/js/select2.full.min.js"></script>
+<!-- Bootstrap4 Duallistbox -->
+<script src="/plugins/bootstrap4-duallistbox/jquery.bootstrap-duallistbox.min.js"></script>
+<!-- InputMask -->
+<script src="/plugins/inputmask/jquery.inputmask.min.js"></script>
+<!-- bootstrap color picker -->
+<script src="/plugins/bootstrap-colorpicker/js/bootstrap-colorpicker.min.js"></script>
+<!-- Tempusdominus Bootstrap 4 -->
+<script src="/plugins/tempusdominus-bootstrap-4/js/tempusdominus-bootstrap-4.min.js"></script>
+<!-- Bootstrap Switch -->
+<script src="/plugins/bootstrap-switch/js/bootstrap-switch.min.js"></script>
+<!-- BS-Stepper -->
+<script src="/plugins/bs-stepper/js/bs-stepper.min.js"></script>
+<!-- dropzonejs -->
+<script src="/plugins/dropzone/min/dropzone.min.js"></script>
+<!-- CodeMirror -->
+<script src="/plugins/codemirror/codemirror.js"></script>
+<script src="/plugins/codemirror/mode/css/css.js"></script>
+<script src="/plugins/codemirror/mode/xml/xml.js"></script>
+<script src="/plugins/codemirror/mode/htmlmixed/htmlmixed.js"></script>
+<!-- jquery-validation -->
+<script src="/plugins/jquery-validation/jquery.validate.min.js"></script>
+<script src="/plugins/jquery-validation/additional-methods.min.js"></script>
+<!-- DataTabl & Plugins -->
+<script src="/plugins/datatables/jquery.dataTables.min.js"></script>
+<script src="/plugins/datatables-bs4/js/dataTables.bootstrap4.min.js"></script>
+<script src="/plugins/datatables-responsive/js/dataTables.responsive.min.js"></script>
+<script src="/plugins/datatables-responsive/js/responsive.bootstrap4.min.js"></script>
+<script src="/plugins/datatables-buttons/js/dataTables.buttons.min.js"></script>
+<script src="/plugins/datatables-buttons/js/buttons.bootstrap4.min.js"></script>
+<script src="/plugins/jszip/jszip.min.js"></script>
+<script src="/plugins/pdfmake/pdfmake.min.js"></script>
+<script src="/plugins/pdfmake/vfs_fonts.js"></script>
+<script src="/plugins/datatables-buttons/js/buttons.html5.min.js"></script>
+<script src="/plugins/datatables-buttons/js/buttons.print.min.js"></script>
+<script src="/plugins/datatables-buttons/js/buttons.colVis.min.js"></script>
+<!-- jsGrid -->
+<script src="/plugins/jsgrid/demos/db.js"></script>
+<script src="/plugins/jsgrid/jsgrid.min.js"></script>
+<!-- fullCalendar 2.2.5 -->
+<script src="/plugins/fullcalendar/main.js"></script>
+<!-- Ekko Lightbox -->
+<script src="/plugins/ekko-lightbox/ekko-lightbox.min.js"></script>
+<!-- Filterizr-->
+<script src="/plugins/filterizr/jquery.filterizr.min.js"></script>
+<script src="/plugins/datatables-fixedheader/js/dataTables.fixedHeader.min.js"></script>
+
+  <!-- pace-progress -->
+<!-- <script src="/plugins/pace-progress/pace.min.js"></script> -->
+
+  <!-- Vue App - Load Last -->
+  <script type="module" src="/src/main.js"></script>
+</body>
+</html>
