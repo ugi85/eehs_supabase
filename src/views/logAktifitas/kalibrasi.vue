@@ -1,10 +1,59 @@
 <script setup>
-import { ref, onMounted, computed } from 'vue'
+import { ref, onMounted, computed, nextTick } from 'vue'
 import { useLogAktivitas } from '@/composables/useLogAktivitas'
 import { logAktivitasApi } from '@/api' // ✅ IMPORT API LANGSUNG
 import { printService } from '@/services/printService'
 import { usePermissions } from '@/composables/usePermissions'
 import { useUsers } from '@/composables/useUsers'
+
+const permission = usePermissions()
+
+// Backlog modal state
+const backlogModal = ref({ show: false, row: null, status: null, notes: '' })
+const savingBacklog = ref(false)
+
+const openBacklogModal = (row) => {
+  backlogModal.value = {
+    show: true,
+    row,
+    status: row.backlog_status || null,
+    notes: row.backlog_notes || ''
+  }
+  nextTick(() => $('#backlogModalKalibrasi').modal('show'))
+}
+
+// Format timestamp untuk display
+const formatAuditTime = (isoString) => {
+  if (!isoString) return '-'
+  const d = new Date(isoString)
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${pad(d.getDate())}/${pad(d.getMonth()+1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
+const saveBacklog = async () => {
+  if (!backlogModal.value.row?.log_no) return
+  savingBacklog.value = true
+  try {
+    const updatedBy = permission.user.value?.inisial || permission.user.value?.nama || permission.user.value?.email || null
+    await logAktivitasApi.updateBacklog(
+      backlogModal.value.row.log_no,
+      backlogModal.value.status,
+      backlogModal.value.notes,
+      updatedBy
+    )
+    // Update local row data
+    backlogModal.value.row.backlog_status = backlogModal.value.status
+    backlogModal.value.row.backlog_notes = backlogModal.value.notes
+    backlogModal.value.row.backlog_updated_at = new Date().toISOString()
+    backlogModal.value.row.backlog_updated_by = updatedBy
+    $('#backlogModalKalibrasi').modal('hide')
+    Swal.fire({ icon: 'success', title: 'Berhasil!', text: 'Backlog berhasil disimpan', timer: 1200, showConfirmButton: false })
+  } catch (error) {
+    Swal.fire({ icon: 'error', title: 'Gagal!', text: error.message || 'Gagal menyimpan backlog' })
+  } finally {
+    savingBacklog.value = false
+  }
+}
 
 const {
   loading,
@@ -15,7 +64,6 @@ const {
   fetchData
 } = useLogAktivitas()
 
-const permission = usePermissions()
 const { users, fetchUsers } = useUsers()
 
 // Helper untuk decode HTML entities dan fix encoding
@@ -464,6 +512,12 @@ onMounted(async () => {
                         <span :class="['badge', row.status === 'Selesai' ? 'badge-success' : 'badge-danger']">
                           {{ row.status }}
                         </span>
+                        <span v-if="row.backlog_status === 'pending'" class="badge badge-warning d-block mt-1" title="Ada follow-up pending">
+                          <i class="fas fa-clock mr-1"></i>Backlog
+                        </span>
+                        <span v-else-if="row.backlog_status === 'completed'" class="badge badge-info d-block mt-1" title="Backlog selesai">
+                          <i class="fas fa-check mr-1"></i>Done
+                        </span>
                       </td>
                       
                       <td class="text-center">
@@ -487,8 +541,17 @@ onMounted(async () => {
                             <i class="fas fa-save"></i>
                           </span>
                         </button>
-                        <span v-else-if="row.status === 'Selesai'" class="text-success">
-                          <i class="fas fa-check-circle fa-lg"></i>
+                        <span v-else-if="row.status === 'Selesai'" class="d-flex align-items-center justify-content-center">
+                          <i class="fas fa-check-circle fa-lg text-success mr-2"></i>
+                          <button
+                            v-if="isLoggedIn"
+                            class="btn btn-sm"
+                            :class="row.backlog_status === 'pending' ? 'btn-warning' : row.backlog_status === 'completed' ? 'btn-success' : 'btn-outline-secondary'"
+                            @click="openBacklogModal(row)"
+                            title="Kelola Backlog"
+                          >
+                            <i class="fas fa-clipboard-list"></i>
+                          </button>
                         </span>
                         <span v-else class="text-muted small">
                           <i class="fas fa-lock mr-1"></i>
@@ -511,6 +574,49 @@ onMounted(async () => {
         </div>
       </div>
     </section>
+  </div>
+
+  <!-- Backlog Modal -->
+  <div class="modal fade" id="backlogModalKalibrasi" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-sm">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="fas fa-clipboard-list mr-2"></i>Backlog / Follow-up</h5>
+          <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+        </div>
+        <div class="modal-body">
+          <p class="text-muted small mb-2">
+            <strong>{{ backlogModal.row?.['No.ID'] }}</strong> — {{ backlogModal.row?.['Calibration Id.'] }}
+          </p>
+          <!-- Audit trail info -->
+          <div v-if="backlogModal.row?.backlog_updated_at" class="alert alert-light py-1 px-2 mb-2 small">
+            <i class="fas fa-history mr-1 text-muted"></i>
+            Terakhir diubah: <strong>{{ formatAuditTime(backlogModal.row.backlog_updated_at) }}</strong>
+            <span v-if="backlogModal.row.backlog_updated_by"> oleh <strong>{{ backlogModal.row.backlog_updated_by }}</strong></span>
+          </div>
+          <div class="form-group">
+            <label>Status Backlog</label>
+            <select v-model="backlogModal.status" class="form-control form-control-sm">
+              <option :value="null">— Tidak ada backlog —</option>
+              <option value="pending">Pending (perlu ditindaklanjuti)</option>
+              <option value="completed">Completed (sudah selesai)</option>
+            </select>
+          </div>
+          <div v-if="backlogModal.status" class="form-group">
+            <label>Catatan</label>
+            <textarea v-model="backlogModal.notes" class="form-control form-control-sm" rows="3"
+              placeholder="Contoh: Menunggu part dari supplier, ETA 2 minggu"></textarea>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary btn-sm" data-dismiss="modal" :disabled="savingBacklog">Batal</button>
+          <button type="button" class="btn btn-primary btn-sm" @click="saveBacklog" :disabled="savingBacklog">
+            <span v-if="savingBacklog"><span class="spinner-border spinner-border-sm mr-1"></span>Menyimpan...</span>
+            <span v-else><i class="fas fa-save mr-1"></i>Simpan</span>
+          </button>
+        </div>
+      </div>
+    </div>
   </div>
 </template>
 

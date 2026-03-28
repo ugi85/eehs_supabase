@@ -156,6 +156,115 @@ export const jadwalKalibrasiApi = {
   },
 
   /**
+   * UPSERT BATCH: Import banyak baris sekaligus (paralel, efisien)
+   */
+  async upsertBatch(jadwals) {
+    const calIds = jadwals.map(j => j.cal_id).filter(Boolean)
+
+    // Satu query untuk ambil semua calibration_id yang sudah ada
+    const existingMap = {}
+    if (calIds.length) {
+      const { data: existingRows } = await supabase
+        .from('kalibrasi')
+        .select('no, calibration_id')
+        .in('calibration_id', calIds)
+      ;(existingRows || []).forEach(r => { existingMap[r.calibration_id] = r.no })
+    }
+
+    const results = await Promise.allSettled(
+      jadwals.map(async (jadwal) => {
+        const jadwalData = {
+          no_id: jadwal.no_id,
+          description: jadwal.description,
+          calibration_id: jadwal.cal_id,
+          parameter: jadwal.parameter,
+          process_range: jadwal.process_range,
+          reject_error_limit: jadwal.reject_error,
+          int: jadwal.interval,
+          due_date: jadwal.due_date,
+          remark: jadwal.remark,
+          criticality: jadwal.criticality
+        }
+
+        const existingNo = jadwal.cal_id ? existingMap[jadwal.cal_id] : null
+        let result
+        if (existingNo) {
+          result = await supabase.from('kalibrasi').update(jadwalData).eq('no', existingNo).select().single()
+        } else {
+          result = await supabase.from('kalibrasi').insert([jadwalData]).select().single()
+        }
+
+        if (result.error) throw new Error(result.error.message)
+        return { action: existingNo ? 'updated' : 'inserted', no_id: jadwal.no_id }
+      })
+    )
+
+    return results.map((r, i) => ({
+      no_id: jadwals[i].no_id,
+      success: r.status === 'fulfilled',
+      action: r.status === 'fulfilled' ? r.value.action : null,
+      error: r.status === 'rejected' ? r.reason?.message : null
+    }))
+  },
+
+  /**
+   * UPSERT: Insert or update berdasarkan calibration_id (untuk import Excel)
+   */
+  async upsertByCalId(jadwal) {
+    try {
+      const jadwalData = {
+        no_id: jadwal.no_id,
+        description: jadwal.description,
+        calibration_id: jadwal.cal_id,
+        parameter: jadwal.parameter,
+        process_range: jadwal.process_range,
+        reject_error_limit: jadwal.reject_error,
+        int: jadwal.interval,
+        due_date: jadwal.due_date,
+        remark: jadwal.remark,
+        criticality: jadwal.criticality
+      }
+
+      // Cek apakah calibration_id sudah ada (jika ada cal_id)
+      let existing = null
+      if (jadwal.cal_id) {
+        const { data } = await supabase
+          .from('kalibrasi')
+          .select('no')
+          .eq('calibration_id', jadwal.cal_id)
+          .maybeSingle()
+        existing = data
+      }
+
+      let result
+      if (existing) {
+        result = await supabase
+          .from('kalibrasi')
+          .update(jadwalData)
+          .eq('no', existing.no)
+          .select()
+          .single()
+      } else {
+        result = await supabase
+          .from('kalibrasi')
+          .insert([jadwalData])
+          .select()
+          .single()
+      }
+
+      if (result.error) throw result.error
+
+      return {
+        success: true,
+        action: existing ? 'updated' : 'inserted',
+        item: result.data
+      }
+    } catch (error) {
+      throw new Error(error.message || 'Gagal upsert jadwal kalibrasi')
+    }
+  },
+
+  /**
    * POST: Create jadwal kalibrasi
    */
   async create(jadwal) {

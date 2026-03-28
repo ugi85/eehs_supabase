@@ -82,7 +82,9 @@ export const logAktivitasApi = {
         jenis: log.jenis,
         execute_date: executeDate,
         pic: log.pic || log.petugas || null,
-        keterangan: log.keterangan
+        keterangan: log.keterangan,
+        backlog_status: log.backlog_status || null,
+        backlog_notes: log.backlog_notes || null
       }
 
       const { data, error } = await supabase
@@ -125,7 +127,9 @@ export const logAktivitasApi = {
         jenis: log.jenis,
         execute_date: executeDate,
         pic: log.pic || log.petugas || null,
-        keterangan: log.keterangan
+        keterangan: log.keterangan,
+        backlog_status: log.backlog_status !== undefined ? log.backlog_status : null,
+        backlog_notes: log.backlog_notes !== undefined ? log.backlog_notes : null
       }
 
       const { data, error } = await supabase
@@ -327,7 +331,6 @@ export const logAktivitasApi = {
    */
   async getKalibrasiForPeriod(month, year) {
     try {
-      console.log('[Log API] getKalibrasiForPeriod:', { month, year })
       
       // Get month number
       const months = ['January', 'February', 'March', 'April', 'May', 'June',
@@ -353,16 +356,12 @@ export const logAktivitasApi = {
       const alatStatusMap = {}
       ;(alatStatusData || []).forEach(d => { alatStatusMap[d.no_id] = d.status })
 
-      console.log('[Log API] Total kalibrasi data:', kalibrasiData?.length)
-
       // Filter by month only — obsolete tetap ditampilkan
       const monthShort = month.substring(0, 3).toLowerCase()
       const filtered = (kalibrasiData || []).filter(item => {
         if (!item.due_date) return false
         return item.due_date.toLowerCase().includes(monthShort)
       })
-
-      console.log('[Log API] Filtered kalibrasi for', month, ':', filtered.length)
 
       // Get log data for this month
       const { data: logData, error: logError } = await supabase
@@ -376,8 +375,6 @@ export const logAktivitasApi = {
         console.error('[Log API] Error fetching log:', logError)
         throw logError
       }
-
-      console.log('[Log API] Log data for', month, year, ':', logData?.length)
 
       // Helper untuk decode dan fix encoding issues
       const fixEncoding = (text) => {
@@ -436,12 +433,13 @@ export const logAktivitasApi = {
           'ket': log?.keterangan || null,
           'log_no': log?.no || null,
           'status': log ? 'Selesai' : 'Belum',
-          'equipment_status': alatStatusMap[item.no_id] || 'active'
+          'equipment_status': alatStatusMap[item.no_id] || 'active',
+          'backlog_status': log?.backlog_status || null,
+          'backlog_notes': log?.backlog_notes || null,
+          'backlog_updated_at': log?.backlog_updated_at || null,
+          'backlog_updated_by': log?.backlog_updated_by || null
         }
       })
-
-      console.log('[Log API] Final result:', result.length, 'items')
-      console.log('[Log API] Sample data:', result[0])
 
       return {
         success: true,
@@ -462,7 +460,6 @@ export const logAktivitasApi = {
    */
   async getPMForPeriod(month, year) {
     try {
-      console.log('[Log API] getPMForPeriod:', { month, year })
       
       // Get month number
       const months = ['January', 'February', 'March', 'April', 'May', 'June',
@@ -481,10 +478,7 @@ export const logAktivitasApi = {
         throw alatError
       }
 
-      console.log('[Log API] Total PM equipment:', alatData?.length)
-
       // Debug: Log all PM items with their schedule and interval fields
-      console.log('[Log API] All PM items:')
       alatData?.forEach(item => {
         console.log({
           no_id: item.no_id,
@@ -519,14 +513,6 @@ export const logAktivitasApi = {
         return false
       })
 
-      console.log('[Log API] Filtered PM for', month, ':', filtered.length)
-      console.log('[Log API] Filtered items:', filtered.map(i => ({ 
-        no_id: i.no_id, 
-        schedule: i.schedule,
-        '6_monthly': i['6_monthly'],
-        yearly: i.yearly
-      })))
-
       // Get log data for this month
       const { data: logData, error: logError } = await supabase
         .from('logaktivitas')
@@ -539,8 +525,6 @@ export const logAktivitasApi = {
         console.error('[Log API] Error fetching log:', logError)
         throw logError
       }
-
-      console.log('[Log API] Log data for PM', month, year, ':', logData?.length)
 
       // Helper untuk decode dan fix encoding issues
       const fixEncoding = (text) => {
@@ -584,21 +568,12 @@ export const logAktivitasApi = {
         let pmInterval = '-'
         let dueDate = '-'
         
-        // Debug log untuk melihat nilai field
-        console.log('[Log API] PM Item:', {
-          no_id: item.no_id,
-          '6_monthly': item['6_monthly'],
-          'yearly': item.yearly,
-          'schedule': item.schedule
-        })
-        
         // Check if this month is in yearly field
         if (item.yearly && item.yearly !== 'NA' && item.yearly !== '-' && item.yearly.trim() !== '') {
           const yearlyLower = item.yearly.toLowerCase()
           if (yearlyLower.includes(monthShort)) {
             pmInterval = '12'
             dueDate = item.yearly
-            console.log('[Log API] Set interval to 12 for', item.no_id, '(from yearly field)')
           }
         }
         
@@ -608,7 +583,6 @@ export const logAktivitasApi = {
           if (sixMonthlyLower.includes(monthShort)) {
             pmInterval = '6'
             dueDate = item['6_monthly']
-            console.log('[Log API] Set interval to 6 for', item.no_id, '(from 6_monthly field)')
           }
         }
         
@@ -619,10 +593,8 @@ export const logAktivitasApi = {
           // If schedule contains comma (e.g., "Jan, Jul"), it's likely 6-monthly
           if (item.schedule.includes(',')) {
             pmInterval = '6'
-            console.log('[Log API] Set interval to 6 for', item.no_id, '(guessed from schedule with comma)')
           } else {
             pmInterval = '12'
-            console.log('[Log API] Set interval to 12 for', item.no_id, '(guessed from schedule without comma)')
           }
         }
         
@@ -642,12 +614,13 @@ export const logAktivitasApi = {
           'ket': log?.keterangan || null,
           'log_no': log?.no || null,
           'status': log ? 'Selesai' : 'Belum',
-          'equipment_status': item.status || 'active'
+          'equipment_status': item.status || 'active',
+          'backlog_status': log?.backlog_status || null,
+          'backlog_notes': log?.backlog_notes || null,
+          'backlog_updated_at': log?.backlog_updated_at || null,
+          'backlog_updated_by': log?.backlog_updated_by || null
         }
       })
-
-      console.log('[Log API] Final PM result:', result.length, 'items')
-      console.log('[Log API] Sample PM data:', result[0])
 
       return {
         success: true,
@@ -777,13 +750,80 @@ export const logAktivitasApi = {
           description,
           type_model,
           sn,
-          equipment_status: equipmentStatus
+          equipment_status: equipmentStatus,
+          backlog_status: item.backlog_status || null,
+          backlog_notes: item.backlog_notes || null,
+          backlog_updated_at: item.backlog_updated_at || null,
+          backlog_updated_by: item.backlog_updated_by || null
         }
       })
 
       return mappedData
     } catch (error) {
       console.error('[Log Aktivitas API] Error listLogs:', error)
+      return []
+    }
+  },
+
+  /**
+   * PATCH: Update backlog status saja (tanpa ubah data log lainnya)
+   */
+  async updateBacklog(no, backlog_status, backlog_notes, updatedBy = null) {
+    try {
+      const { data, error } = await supabase
+        .from('logaktivitas')
+        .update({
+          backlog_status,
+          backlog_notes,
+          backlog_updated_at: new Date().toISOString(),
+          backlog_updated_by: updatedBy || null
+        })
+        .eq('no', no)
+        .select()
+        .single()
+
+      if (error) throw error
+      return { success: true, data }
+    } catch (error) {
+      return handleSupabaseError(error)
+    }
+  },
+
+  /**
+   * GET: Fetch all pending backlogs
+   */
+  async getPendingBacklogs() {
+    try {
+      const { data, error } = await supabase
+        .from('logaktivitas')
+        .select('*')
+        .eq('backlog_status', 'pending')
+        .order('execute_date', { ascending: false })
+
+      if (error) throw error
+
+      const { data: alatData } = await supabase
+        .from('daftaralat')
+        .select('no_id, description, status')
+
+      return (data || []).map(item => {
+        const alat = (alatData || []).find(a => a.no_id === item.no_id)
+        return {
+          no: item.no,
+          no_id: item.no_id,
+          cal_id: item.calibration_id,
+          jenis: item.jenis,
+          tanggal: item.execute_date,
+          petugas: item.pic,
+          keterangan: item.keterangan,
+          backlog_status: item.backlog_status,
+          backlog_notes: item.backlog_notes,
+          description: alat?.description || '-',
+          equipment_status: alat?.status || 'active'
+        }
+      })
+    } catch (error) {
+      console.error('[Log Aktivitas API] Error getPendingBacklogs:', error)
       return []
     }
   },
@@ -802,3 +842,4 @@ export const logAktivitasApi = {
     return this.update(log.no || log.log_no, log)
   }
 }
+

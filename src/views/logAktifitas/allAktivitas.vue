@@ -1,31 +1,32 @@
 <script setup>
-import { ref, onMounted, onUnmounted, nextTick, watch, computed } from 'vue'
+import { ref, onMounted, onUnmounted, watch, computed, nextTick } from 'vue'
 import { useLogAktivitas } from '@/composables/useLogAktivitas'
 import { printService } from '@/services/printService'
 import { usePermissions } from '@/composables/usePermissions'
 
 const permission = usePermissions()
 
-// Computed untuk permission checks
-const canCreate = computed(() => permission.can('logAktivitas:create'))
+const formatAuditTime = (isoString) => {
+  if (!isoString) return '-'
+  const d = new Date(isoString)
+  const pad = (n) => String(n).padStart(2, '0')
+  return `${pad(d.getDate())}/${pad(d.getMonth()+1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`
+}
+
 const canEdit = computed(() => permission.can('logAktivitas:edit'))
 const canDelete = computed(() => permission.can('logAktivitas:delete'))
 const isLoggedIn = computed(() => permission.isLoggedIn.value)
 
-// ✅ Ambil semua fungsi yang diperlukan dari composable
-// ❌ HAPUS: formatDateDisplay dari destructuring (karena akan duplicate)
-const { 
+const {
   loading,
   allActivityLogs,
+  displayedLogs,
+  backlogFilter,
+  backlogCounts,
   initAllActivities,
   fetchAllLogs,
   deleteLog,
-  updateLog,
-  initDataTable,
-  refreshDataTable,
-  getStatusBadgeClass,
   getJenisBadgeClass,
-   // ✅ STATE & METHODS UNTUK FORM
   showFormDialog,
   formMode,
   currentLog,
@@ -33,247 +34,193 @@ const {
   isSaving,
   openFormDialog,
   closeFormDialog,
-  handleSubmit
+  handleSubmit,
+  setBacklogFilter
 } = useLogAktivitas()
 
-// ✅ State untuk error handling
 const pageError = ref(null)
 
-// print helpers
-const printDate = ref('')
-const handlePrint = () => {
-  if (allActivityLogs.length === 0) {
-    Swal.fire({
-      icon: 'warning',
-      title: 'Tidak Ada Data',
-      text: 'Belum ada data untuk dicetak',
-      confirmButtonText: 'OK'
-    })
-    return
-  }
+// ── DataTable — satu-satunya tempat yang kelola instance ──────────────────
+let dtInstance = null
 
-  const now = new Date()
-  printDate.value = `${now.getDate().toString().padStart(2,'0')}/${(now.getMonth()+1).toString().padStart(2,'0')}/${now.getFullYear()} ${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}`
-  
-  // Call print service
-  printService.printAllActivity(allActivityLogs.value, 'All', new Date().getFullYear().toString())
+const initDT = async () => {
+  await nextTick()
+  if (dtInstance) {
+    try { dtInstance.destroy(true) } catch (e) {}
+    dtInstance = null
+  }
+  const table = document.querySelector('.all-aktivitas-table')
+  if (!table) return
+  dtInstance = $(table).DataTable({
+    paging: true,
+    lengthChange: true,
+    searching: true,
+    ordering: true,
+    info: true,
+    autoWidth: false,
+    responsive: false,
+    scrollX: true,
+    scrollCollapse: true,
+    lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, 'All']],
+    language: { search: '_INPUT_', searchPlaceholder: 'Cari data...' }
+  })
 }
 
-// ✅ State untuk refresh
+// Print
+const printDate = ref('')
+const handlePrint = () => {
+  if (!displayedLogs.value.length) {
+    Swal.fire({ icon: 'warning', title: 'Tidak Ada Data', text: 'Belum ada data untuk dicetak', confirmButtonText: 'OK' })
+    return
+  }
+  const now = new Date()
+  printDate.value = `${String(now.getDate()).padStart(2,'0')}/${String(now.getMonth()+1).padStart(2,'0')}/${now.getFullYear()} ${String(now.getHours()).padStart(2,'0')}:${String(now.getMinutes()).padStart(2,'0')}`
+  printService.printAllActivity(displayedLogs.value, 'All', String(now.getFullYear()))
+}
+
+// Auto-refresh
+let refreshTimer = null
+
 const refresh = async () => {
   pageError.value = null
   await fetchAllLogs()
+  setBacklogFilter(backlogFilter.value) // update displayedLogs dengan data baru
+  // watch(backlogFilter) tidak terpicu karena nilai tidak berubah
+  // jadi panggil initDT manual setelah data baru masuk
   await nextTick()
-  await nextTick()
-  await refreshDataTable('.jadwal-kalibrasi-table')
+  await initDT()
 }
 
-// ✅ State untuk bulk delete
+const startAutoRefresh = () => {
+  if (refreshTimer) clearInterval(refreshTimer)
+  refreshTimer = setInterval(refresh, 60 * 1000)
+}
+
+const stopAutoRefresh = () => {
+  if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null }
+}
+
+// Bulk delete
 const selectedLogs = ref([])
 const isSelectAll = ref(false)
 const bulkDeleteMode = ref(false)
 
-// ✅ Toggle bulk delete mode
 const toggleBulkDeleteMode = () => {
   bulkDeleteMode.value = !bulkDeleteMode.value
-  if (!bulkDeleteMode.value) {
-    selectedLogs.value = []
-    isSelectAll.value = false
-  }
-  // Jangan refresh DataTables, biarkan stabil
+  if (!bulkDeleteMode.value) { selectedLogs.value = []; isSelectAll.value = false }
 }
 
-// ✅ Toggle select all
 const toggleSelectAll = () => {
   if (isSelectAll.value) {
-    // Unselect all
-    selectedLogs.value = []
-    isSelectAll.value = false
+    selectedLogs.value = []; isSelectAll.value = false
   } else {
-    // Select all
-    selectedLogs.value = allActivityLogs.value.map(log => log.no)
+    selectedLogs.value = displayedLogs.value.map(l => l.no)
     isSelectAll.value = true
   }
 }
 
-// ✅ Toggle single log selection
 const toggleLogSelection = (no) => {
-  const index = selectedLogs.value.indexOf(no)
-  if (index === -1) {
-    selectedLogs.value.push(no)
-  } else {
-    selectedLogs.value.splice(index, 1)
-  }
-  // Update select all checkbox state
-  isSelectAll.value = selectedLogs.value.length === allActivityLogs.value.length && allActivityLogs.value.length > 0
+  const idx = selectedLogs.value.indexOf(no)
+  if (idx === -1) selectedLogs.value.push(no)
+  else selectedLogs.value.splice(idx, 1)
+  isSelectAll.value = selectedLogs.value.length === displayedLogs.value.length && displayedLogs.value.length > 0
 }
 
-// ✅ Check if log is selected
-const isLogSelected = (no) => {
-  return selectedLogs.value.includes(no)
-}
+const isLogSelected = (no) => selectedLogs.value.includes(no)
 
-// ✅ Bulk delete handler
 const handleBulkDelete = async () => {
-  if (selectedLogs.value.length === 0) {
+  if (!selectedLogs.value.length) {
     Swal.fire('Peringatan!', 'Pilih minimal 1 log untuk dihapus', 'warning')
     return
   }
+  const result = await Swal.fire({
+    title: 'Hapus Log Aktivitas?',
+    html: `Yakin hapus <strong>${selectedLogs.value.length}</strong> log?<br><small class="text-muted">Data tidak bisa dikembalikan!</small>`,
+    icon: 'warning', showCancelButton: true,
+    confirmButtonColor: '#d33', cancelButtonColor: '#3085d6',
+    confirmButtonText: 'Ya, Hapus!', cancelButtonText: 'Batal'
+  })
+  if (!result.isConfirmed) return
 
-  try {
-    const result = await Swal.fire({
-      title: 'Hapus Log Aktivitas?',
-      html: `Yakin hapus <strong>${selectedLogs.value.length}</strong> log aktivitas?<br><small class="text-muted">Data tidak bisa dikembalikan!</small>`,
-      icon: 'warning',
-      showCancelButton: true,
-      confirmButtonColor: '#d33',
-      cancelButtonColor: '#3085d6',
-      confirmButtonText: 'Ya, Hapus Semua!',
-      cancelButtonText: 'Batal'
-    })
-
-    if (result.isConfirmed) {
-      // Save count before reset
-      const deletedCount = selectedLogs.value.length
-      
-      // Show loading state
-      Swal.fire({
-        title: 'Menghapus...',
-        text: 'Sedang menghapus data, mohon tunggu',
-        allowOutsideClick: false,
-        allowEscapeKey: false,
-        didOpen: () => {
-          Swal.showLoading()
-        }
-      })
-
-      // Delete all selected logs sequentially to avoid race conditions
-      for (const no of selectedLogs.value) {
-        await deleteLog(no)
-      }
-
-      // Reset selection
-      selectedLogs.value = []
-      isSelectAll.value = false
-      bulkDeleteMode.value = false
-
-      // Wait for DOM and data to update
-      await nextTick()
-      await new Promise(resolve => setTimeout(resolve, 300))
-      
-      // Refresh DataTable
-      await refreshDataTable('.jadwal-kalibrasi-table')
-
-      // Show success message
-      Swal.fire({
-        icon: 'success',
-        title: 'Berhasil!',
-        text: `${deletedCount} log aktivitas berhasil dihapus.`,
-        timer: 2000,
-        showConfirmButton: false
-      })
-    }
-  } catch (error) {
-    console.error('Error saat bulk delete:', error)
-    Swal.fire('Error!', error.message || 'Gagal menghapus log', 'error')
-  }
+  const count = selectedLogs.value.length
+  Swal.fire({ title: 'Menghapus...', allowOutsideClick: false, didOpen: () => Swal.showLoading() })
+  for (const no of [...selectedLogs.value]) await deleteLog(no)
+  selectedLogs.value = []; isSelectAll.value = false; bulkDeleteMode.value = false
+  await setBacklogFilter(backlogFilter.value)
+  Swal.fire({ icon: 'success', title: 'Berhasil!', text: `${count} log berhasil dihapus.`, timer: 2000, showConfirmButton: false })
 }
 
-// ✅ BUKA MODAL EDIT
+// Edit / Delete
 const openEditDialog = (log) => {
   openFormDialog('update', log)
   $('#logFormModal').modal('show')
 }
-// ✅ TUTUP MODAL (DIPANGGIL SAAT MODAL DITUTUP)
+
 const handleCloseModal = () => {
   closeFormDialog()
   $('#logFormModal').modal('hide')
 }
 
-// ✅ SIMPAN PERUBAHAN
 const handleSave = async () => {
   if (!formData.value.keterangan?.trim()) {
     Swal.fire('Peringatan!', 'Keterangan wajib diisi', 'warning')
     return
   }
-  
   try {
     await handleSubmit()
     $('#logFormModal').modal('hide')
-    // Tunggu DOM render ulang setelah fetchAllLogs() selesai
-    await nextTick()
-    await nextTick()
-    await refreshDataTable('.jadwal-kalibrasi-table')
+    await setBacklogFilter(backlogFilter.value)
     Swal.fire('Berhasil!', 'Log aktivitas berhasil diupdate', 'success')
   } catch (error) {
-    console.error('Error update log:', error)
     Swal.fire('Error!', error.message || 'Gagal update log', 'error')
   }
 }
 
-// ✅ Fungsi Hapus Log dengan konfirmasi SweetAlert
 const handleDelete = async (no, noId, calId) => {
-  try {
-    const result = await Swal.fire({
-      title: 'Hapus Log Aktivitas?',
-      html: `Yakin hapus log <strong>${noId} - ${calId}</strong>?<br><small class="text-muted">Data tidak bisa dikembalikan!</small>`,
-      icon: 'warning',
-      showCancelButton: true,
-      confirmButtonColor: '#d33',
-      cancelButtonColor: '#3085d6',
-      confirmButtonText: 'Ya, Hapus!',
-      cancelButtonText: 'Batal'
-    })
-
-    if (result.isConfirmed) {
-      await deleteLog(no)
-      await nextTick()
-      await nextTick()
-      await refreshDataTable('.jadwal-kalibrasi-table')
-      Swal.fire('Dihapus!', 'Log aktivitas berhasil dihapus.', 'success')
-    }
-  } catch (error) {
-    console.error('Error saat hapus log:', error)
-    Swal.fire('Error!', error.message || 'Gagal menghapus log', 'error')
-  }
+  const result = await Swal.fire({
+    title: 'Hapus Log Aktivitas?',
+    html: `Yakin hapus log <strong>${noId} - ${calId}</strong>?<br><small class="text-muted">Data tidak bisa dikembalikan!</small>`,
+    icon: 'warning', showCancelButton: true,
+    confirmButtonColor: '#d33', cancelButtonColor: '#3085d6',
+    confirmButtonText: 'Ya, Hapus!', cancelButtonText: 'Batal'
+  })
+  if (!result.isConfirmed) return
+  await deleteLog(no)
+  await setBacklogFilter(backlogFilter.value)
+  Swal.fire('Dihapus!', 'Log aktivitas berhasil dihapus.', 'success')
 }
 
-// ✅ WATCH UNTUK KONTROL MODAL
-watch(showFormDialog, (newVal) => {
-  if (newVal) {
-    $('#logFormModal').modal('show')
-  } else {
-    $('#logFormModal').modal('hide')
-  }
+watch(showFormDialog, (val) => {
+  if (val) $('#logFormModal').modal('show')
+  else $('#logFormModal').modal('hide')
 })
 
-// ✅ Inisialisasi dengan error handling lengkap
+// watch backlogFilter: saat filter button diklik, :key berubah → Vue recreate table → init DT
+// Gunakan flush:'post' agar berjalan setelah DOM diupdate Vue
+watch(backlogFilter, () => {
+  nextTick().then(() => initDT())
+}, { flush: 'post' })
+
+// Mount
 onMounted(async () => {
   try {
     await initAllActivities()
-    await nextTick()
-    
-    // Validasi jQuery & DataTables
-    if (typeof window.$ === 'undefined' || typeof window.$.fn.DataTable === 'undefined') {
-      throw new Error('jQuery atau DataTables belum di-load')
-    }
-    
-    initDataTable('.jadwal-kalibrasi-table')
-    console.log('[AllAktivitas] Inisialisasi berhasil')
+    await initDT()
+    startAutoRefresh()
   } catch (error) {
-    console.error('[AllAktivitas] Error:', error)
     pageError.value = error.message || 'Gagal memuat halaman'
     Swal.fire('Error!', error.message || 'Gagal memuat data', 'error')
   }
 
-  // Auto-reload saat user kembali ke tab ini
   const onVisibilityChange = async () => {
-    if (document.visibilityState === 'visible') {
-      await refresh()
-    }
+    if (document.visibilityState === 'visible') await refresh()
   }
   document.addEventListener('visibilitychange', onVisibilityChange)
-  onUnmounted(() => document.removeEventListener('visibilitychange', onVisibilityChange))
+  onUnmounted(() => {
+    document.removeEventListener('visibilitychange', onVisibilityChange)
+    stopAutoRefresh()
+    if (dtInstance) { try { dtInstance.destroy(true) } catch (e) {} dtInstance = null }
+  })
 })
 </script>
 
@@ -287,8 +234,42 @@ onMounted(async () => {
           <small class="text-muted">Menampilkan semua aktivitas Kalibrasi dan PM yang pernah dilaksanakan</small>
         </div>
         <div class="d-flex align-items-center no-print">
+          <!-- Filter Backlog -->
+          <div class="btn-group btn-group-sm mr-3" role="group">
+            <button
+              type="button"
+              class="btn"
+              :class="backlogFilter === 'all' ? 'btn-secondary' : 'btn-outline-secondary'"
+              @click="setBacklogFilter('all')"
+            >Semua</button>
+            <button
+              type="button"
+              class="btn"
+              :class="backlogFilter === 'pending' ? 'btn-warning' : 'btn-outline-warning'"
+              @click="setBacklogFilter('pending')"
+            >
+              <i class="fas fa-clock mr-1"></i>Pending
+              <span v-if="backlogCounts.pending > 0" class="badge badge-dark ml-1">{{ backlogCounts.pending }}</span>
+            </button>
+            <button
+              type="button"
+              class="btn"
+              :class="backlogFilter === 'completed' ? 'btn-success' : 'btn-outline-success'"
+              @click="setBacklogFilter('completed')"
+            >
+              <i class="fas fa-check mr-1"></i>Done
+              <span v-if="backlogCounts.completed > 0" class="badge badge-dark ml-1">{{ backlogCounts.completed }}</span>
+            </button>
+            <button
+              type="button"
+              class="btn"
+              :class="backlogFilter === 'none' ? 'btn-light' : 'btn-outline-secondary'"
+              @click="setBacklogFilter('none')"
+            >Tanpa Backlog</button>
+          </div>
           <span class="badge badge-info mr-3">
-            <i class="fas fa-database mr-1"></i>Total: {{ allActivityLogs.length }}
+            <i class="fas fa-database mr-1"></i>
+            {{ displayedLogs.length }}{{ backlogFilter !== 'all' ? ' / ' + allActivityLogs.length : '' }}
           </span>
           <button
             class="btn btn-secondary btn-sm mr-2"
@@ -297,13 +278,6 @@ onMounted(async () => {
             title="Cetak semua log aktivitas"
           >
             <i class="fas fa-print mr-1"></i>Print
-          </button>
-          <button 
-            @click="refresh" 
-            class="btn btn-outline-secondary btn-sm"
-            :disabled="loading"
-          >
-            <i class="fas fa-sync-alt mr-1"></i>Refresh
           </button>
         </div>
       </div>
@@ -349,11 +323,10 @@ onMounted(async () => {
               <p class="text-muted small">Mohon tunggu, sedang mengambil data dari server...</p>
             </div>
 
-            <!-- ✅ DATA DITEMUKAN -->
-            <div v-else-if="allActivityLogs.length > 0" :class="{ 'bulk-delete-active': bulkDeleteMode }">
-              <!-- Bulk delete buttons - sejajar dengan DataTables controls -->
+            <!-- DATA -->
+            <div v-else :class="{ 'bulk-delete-active': bulkDeleteMode }">
+              <!-- Bulk delete buttons -->
               <div class="bulk-delete-wrapper no-print" v-if="isLoggedIn && canDelete">
-                <!-- Tombol Hapus Banyak - di tengah -->
                 <button
                   class="btn btn-outline-danger btn-sm bulk-delete-toggle-btn"
                   :class="{ 'active': bulkDeleteMode }"
@@ -363,7 +336,6 @@ onMounted(async () => {
                   <i class="fas fa-trash-alt mr-1"></i>
                   {{ bulkDeleteMode ? 'Cancel' : 'Delete' }}
                 </button>
-                <!-- Tombol Hapus X Log - di kanan dekat search -->
                 <button
                   v-if="bulkDeleteMode && selectedLogs.length > 0"
                   class="btn btn-danger btn-sm bulk-delete-action-btn"
@@ -373,8 +345,9 @@ onMounted(async () => {
                   <i class="fas fa-trash mr-1"></i>Delete {{ selectedLogs.length }} Log
                 </button>
               </div>
+
               <div class="table-responsive">
-                <table class="table table-bordered table-hover jadwal-kalibrasi-table">
+                <table :key="backlogFilter" class="table table-bordered table-hover all-aktivitas-table">
                   <thead>
                     <tr>
                       <th class="align-middle text-center checkbox-column" :style="bulkDeleteMode ? '' : 'width:0!important;min-width:0!important;max-width:0!important;padding:0!important;'">
@@ -386,19 +359,19 @@ onMounted(async () => {
                         />
                       </th>
                       <th class="align-middle text-center">No</th>
-                      <th class ="align-middle text-center">No.ID</th>
-                      <th class ="align-middle text-center">Description</th>
-                      <th class ="align-middle text-center">Log ID</th>
-                      <th class ="align-middle text-center">Jenis</th>
-                      <th class ="align-middle text-center">PIC</th>
-                      <th class ="align-middle text-center">Execute Date</th>
-                      <th class ="align-middle text-center">Keterangan</th>
-                      <th class ="align-middle text-center">Aksi</th>
+                      <th class="align-middle text-center">No.ID</th>
+                      <th class="align-middle text-center">Description</th>
+                      <th class="align-middle text-center">Log ID</th>
+                      <th class="align-middle text-center">Jenis</th>
+                      <th class="align-middle text-center">PIC</th>
+                      <th class="align-middle text-center">Execute Date</th>
+                      <th class="align-middle text-center">Keterangan</th>
+                      <th class="align-middle text-center">Aksi</th>
                     </tr>
                   </thead>
                   <tbody>
                     <tr
-                      v-for="(log, index) in allActivityLogs"
+                      v-for="(log, index) in displayedLogs"
                       :key="log.no || index"
                     >
                       <td class="text-center checkbox-column" :style="bulkDeleteMode ? '' : 'width:0!important;min-width:0!important;max-width:0!important;padding:0!important;'">
@@ -431,7 +404,14 @@ onMounted(async () => {
                           {{ log.formattedDate || '-' }}
                         </span>
                       </td>
-                      <td>{{ log.keterangan || '-' }}</td>
+                      <td>{{ log.keterangan || '-' }}
+                        <span v-if="log.backlog_status === 'pending'" class="badge badge-warning ml-1" title="Ada follow-up yang pending">
+                          <i class="fas fa-clock mr-1"></i>Pending
+                        </span>
+                        <span v-else-if="log.backlog_status === 'completed'" class="badge badge-success ml-1" title="Follow-up sudah selesai">
+                          <i class="fas fa-check mr-1"></i>Done
+                        </span>
+                      </td>
                        <td class="text-center">
                         <!-- ✅ BUTTON EDIT & DELETE - HANYA UNTUK YANG LOGIN -->
                         <button
@@ -470,26 +450,17 @@ onMounted(async () => {
                   </div>
                   <div class="d-flex">
                     <span class="badge badge-light mr-2">
-                      <i class="fas fa-balance-scale mr-1"></i>{{ allActivityLogs.filter(l => l.jenis === 'Kalibrasi').length }} Kalibrasi
+                      <i class="fas fa-balance-scale mr-1"></i>{{ displayedLogs.filter(l => l.jenis === 'Kalibrasi').length }} Kalibrasi
                     </span>
-                    <span class="badge badge-light">
-                      <i class="fas fa-tools mr-1"></i>{{ allActivityLogs.filter(l => l.jenis === 'PM').length }} PM
+                    <span class="badge badge-light mr-2">
+                      <i class="fas fa-tools mr-1"></i>{{ displayedLogs.filter(l => l.jenis === 'PM').length }} PM
+                    </span>
+                    <span v-if="backlogCounts.pending > 0" class="badge badge-warning">
+                      <i class="fas fa-clock mr-1"></i>{{ backlogCounts.pending }} Pending
                     </span>
                   </div>
                 </div>
               </div>
-            </div>
-
-            <!-- ✅ DATA TIDAK DITEMUKAN -->
-            <div v-else class="text-center py-5">
-              <i class="fas fa-inbox fa-4x text-muted mb-3"></i>
-              <p class="text-muted mt-3">
-                <strong>Belum ada log aktivitas</strong><br>
-                <small class="text-muted">Log aktivitas akan muncul setelah jadwal kalibrasi atau PM dilaksanakan</small>
-              </p>
-              <button @click="refresh" class="btn btn-primary mt-3">
-                <i class="fas fa-sync-alt mr-1"></i>Refresh Data
-              </button>
             </div>
           </div>
         </div>
@@ -568,6 +539,38 @@ onMounted(async () => {
                 rows="3" 
                 placeholder="Keterangan hasil aktivitas"
                 required
+              ></textarea>
+            </div>
+
+            <!-- Backlog Section -->
+            <hr class="my-3">
+            <div class="d-flex align-items-center mb-2">
+              <strong class="mr-2">Backlog / Follow-up</strong>
+              <span v-if="formData.backlog_status === 'pending'" class="badge badge-warning">Pending</span>
+              <span v-else-if="formData.backlog_status === 'completed'" class="badge badge-success">Completed</span>
+              <span v-else class="badge badge-light text-muted">Tidak ada</span>
+            </div>
+            <!-- Audit trail -->
+            <div v-if="currentLog?.backlog_updated_at" class="alert alert-light py-1 px-2 mb-2 small">
+              <i class="fas fa-history mr-1 text-muted"></i>
+              Terakhir diubah: <strong>{{ formatAuditTime(currentLog.backlog_updated_at) }}</strong>
+              <span v-if="currentLog.backlog_updated_by"> oleh <strong>{{ currentLog.backlog_updated_by }}</strong></span>
+            </div>
+            <div class="form-group">
+              <label>Status Backlog</label>
+              <select v-model="formData.backlog_status" class="form-control">
+                <option :value="null">— Tidak ada backlog —</option>
+                <option value="pending">Pending (masih ada yang perlu ditindaklanjuti)</option>
+                <option value="completed">Completed (follow-up sudah selesai)</option>
+              </select>
+            </div>
+            <div v-if="formData.backlog_status" class="form-group">
+              <label>Catatan Backlog</label>
+              <textarea
+                v-model="formData.backlog_notes"
+                class="form-control"
+                rows="2"
+                placeholder="Contoh: Menunggu part bearing dari supplier, ETA 2 minggu"
               ></textarea>
             </div>
           </div>

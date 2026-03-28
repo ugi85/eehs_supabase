@@ -82,6 +82,164 @@ export const daftarAlatApi = {
   },
 
   /**
+   * UPSERT BATCH: Import banyak baris sekaligus (paralel, efisien)
+   * Satu query untuk cek semua no_id yang sudah ada, lalu paralel insert/update
+   */
+  async upsertBatch(tools) {
+    const noIds = tools.map(t => t.no_id).filter(Boolean)
+
+    // Satu query untuk ambil semua no_id yang sudah ada
+    const { data: existingRows } = await supabase
+      .from('daftaralat')
+      .select('no, no_id')
+      .in('no_id', noIds)
+
+    const existingMap = {}
+    ;(existingRows || []).forEach(r => { existingMap[r.no_id] = r.no })
+
+    // Pisahkan mana yang update vs insert
+    const toUpdate = tools.filter(t => existingMap[t.no_id])
+    const toInsert = tools.filter(t => !existingMap[t.no_id])
+
+    // Ambil MAX(no) untuk assign manual ke data baru (bypass sequence issue)
+    let nextNo = 0
+    if (toInsert.length > 0) {
+      const { data: maxRow } = await supabase
+        .from('daftaralat')
+        .select('no')
+        .order('no', { ascending: false })
+        .limit(1)
+        .single()
+      nextNo = (maxRow?.no || 0) + 1
+    }
+
+    const buildToolData = (tool) => ({
+      no_id: tool.no_id,
+      description: tool.description,
+      type_model: tool.type_model,
+      sn: tool.sn,
+      year: tool.year,
+      product: tool.product || tool.crit_product,
+      process: tool.process || tool.crit_process,
+      safety: tool.safety || tool.crit_safety,
+      environment: tool.environment || tool.crit_env,
+      pm_yn: tool.pm_yn || tool.pm_overall,
+      '6_monthly': tool['6_monthly'] || tool.pm_6monthly,
+      yearly: tool.yearly || tool.pm_yearly,
+      internal_external: tool.internal_external || tool.pm_internal_external,
+      y_n: tool.y_n || tool.calib_yesno,
+      schedule: tool.schedule || tool.calib_schedule,
+      area: tool.area || null,
+      location: tool.location,
+      status: tool.status || null
+    })
+
+    // Jalankan semua secara paralel
+    const results = await Promise.allSettled([
+      // UPDATE yang sudah ada
+      ...toUpdate.map(async (tool) => {
+        const result = await supabase
+          .from('daftaralat')
+          .update(buildToolData(tool))
+          .eq('no', existingMap[tool.no_id])
+          .select('no')
+          .single()
+        if (result.error) throw new Error(result.error.message)
+        return { action: 'updated', no_id: tool.no_id }
+      }),
+      // INSERT baru dengan no manual
+      ...toInsert.map(async (tool, i) => {
+        const result = await supabase
+          .from('daftaralat')
+          .insert({ ...buildToolData(tool), no: nextNo + i })
+          .select('no')
+          .single()
+        if (result.error) throw new Error(result.error.message)
+        return { action: 'inserted', no_id: tool.no_id }
+      })
+    ])
+
+    // Setelah insert manual, sync sequence agar tidak konflik ke depannya
+    if (toInsert.length > 0) {
+      try {
+        await supabase.rpc('reset_daftaralat_sequence')
+      } catch {
+        // Ignore jika RPC belum ada — sequence akan di-fix manual
+      }
+    }
+
+    const allTools = [...toUpdate, ...toInsert]
+    return results.map((r, i) => ({
+      no_id: allTools[i].no_id,
+      success: r.status === 'fulfilled',
+      action: r.status === 'fulfilled' ? r.value.action : null,
+      error: r.status === 'rejected' ? r.reason?.message : null
+    }))
+  },
+
+  /**
+   * UPSERT: Insert or update berdasarkan no_id (untuk import Excel)
+   * Jika no_id sudah ada → update, jika belum → insert
+   */
+  async upsertByNoId(tool) {
+    try {
+      const toolData = {
+        no_id: tool.no_id,
+        description: tool.description,
+        type_model: tool.type_model,
+        sn: tool.sn,
+        year: tool.year,
+        product: tool.product || tool.crit_product,
+        process: tool.process || tool.crit_process,
+        safety: tool.safety || tool.crit_safety,
+        environment: tool.environment || tool.crit_env,
+        pm_yn: tool.pm_yn || tool.pm_overall,
+        '6_monthly': tool['6_monthly'] || tool.pm_6monthly,
+        yearly: tool.yearly || tool.pm_yearly,
+        internal_external: tool.internal_external || tool.pm_internal_external,
+        y_n: tool.y_n || tool.calib_yesno,
+        schedule: tool.schedule || tool.calib_schedule,
+        area: tool.area,
+        location: tool.location,
+        status: tool.status || null
+      }
+
+      // Cek apakah no_id sudah ada
+      const { data: existing } = await supabase
+        .from('daftaralat')
+        .select('no')
+        .eq('no_id', tool.no_id)
+        .maybeSingle()
+
+      let result
+      if (existing) {
+        result = await supabase
+          .from('daftaralat')
+          .update(toolData)
+          .eq('no', existing.no)
+          .select()
+          .single()
+      } else {
+        result = await supabase
+          .from('daftaralat')
+          .insert([toolData])
+          .select()
+          .single()
+      }
+
+      if (result.error) throw result.error
+
+      return {
+        success: true,
+        action: existing ? 'updated' : 'inserted',
+        item: result.data
+      }
+    } catch (error) {
+      throw new Error(error.message || 'Gagal upsert data alat')
+    }
+  },
+
+  /**
    * POST: Save tool (create or update)
    */
   async saveTool(tool) {
@@ -103,7 +261,8 @@ export const daftarAlatApi = {
         y_n: tool.y_n || tool.calib_yesno,
         schedule: tool.schedule || tool.calib_schedule,
         area: tool.area,
-        location: tool.location
+        location: tool.location,
+        status: tool.status || null
       }
 
       let result

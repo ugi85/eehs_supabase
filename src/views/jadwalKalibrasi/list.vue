@@ -1,9 +1,11 @@
 <script setup>
-import { ref, onMounted, watch, computed, nextTick } from 'vue'
+import { ref, onMounted, onUnmounted, watch, computed, nextTick } from 'vue'
 import { useJadwalKalibrasi } from '@/composables/useJadwalKalibrasi'
 import { useDaftarAlat } from '@/composables/useDaftarAlat'
 import { useFrontendConfig } from '@/composables/useConfig'
 import { usePermissions } from '@/composables/usePermissions'
+import { useExcelImport } from '@/composables/useExcelImport'
+import { jadwalKalibrasiApi } from '@/api'
 
 // ✅ Ambil semua fungsi CRUD
 const {
@@ -12,17 +14,83 @@ const {
   fetchList,
   saveJadwal,
   deleteJadwal,
-  isSaving
+  isSaving,
+  initDataTable,
+  startAutoRefresh,
+  stopAutoRefresh
 } = useJadwalKalibrasi()
 
 const { config } = useFrontendConfig()
+
+const {
+  importing,
+  importErrors,
+  importPreview,
+  showPreview,
+  downloadJadwalKalibrasiTemplate,
+  exportJadwalKalibrasi,
+  parseImportFile,
+  resetImport
+} = useExcelImport()
+
+// Import modal state
+const showImportModal = ref(false)
+const importFileRef = ref(null)
+
+const openImportModal = () => {
+  resetImport()
+  showImportModal.value = true
+}
+
+const closeImportModal = () => {
+  showImportModal.value = false
+  resetImport()
+  if (importFileRef.value) importFileRef.value.value = ''
+}
+
+const handleFileChange = async (e) => {
+  const file = e.target.files[0]
+  if (!file) return
+  await parseImportFile(file, 'jadwalKalibrasi')
+}
+
+const confirmImport = async () => {
+  if (!importPreview.value.length || importErrors.value.length) return
+  importing.value = true
+
+  try {
+    const results = await jadwalKalibrasiApi.upsertBatch(importPreview.value)
+    const inserted = results.filter(r => r.success && r.action === 'inserted').length
+    const updated = results.filter(r => r.success && r.action === 'updated').length
+    const failed = results.filter(r => !r.success)
+
+    closeImportModal()
+    await fetchList(true)
+    await nextTick()
+    await initDataTable()
+
+    const msg = `${inserted} data baru ditambahkan, ${updated} data diperbarui.`
+    if (failed.length) {
+      const errList = failed.slice(0, 5).map(f => `${f.no_id}: ${f.error}`).join('\n')
+      Swal.fire('Import Selesai', `${msg}\n\nGagal (${failed.length}):\n${errList}`, 'warning')
+    } else {
+      Swal.fire('Berhasil!', msg, 'success')
+    }
+  } catch (err) {
+    Swal.fire('Error!', err.message || 'Gagal import data', 'error')
+  } finally {
+    importing.value = false
+  }
+}
 const permission = usePermissions()
 
-// Computed untuk permission checks
-const canCreate = computed(() => permission.can('jadwalKalibrasi:create'))
-const canEdit = computed(() => permission.can('jadwalKalibrasi:edit'))
-const canDelete = computed(() => permission.can('jadwalKalibrasi:delete'))
 const isLoggedIn = computed(() => permission.isLoggedIn.value)
+const isAdmin = computed(() => ['admin', 'superadmin'].includes(permission.user.value?.role))
+
+// Computed untuk permission checks — semua berbasis isAdmin
+const canCreate = computed(() => isAdmin.value)
+const canEdit = computed(() => isAdmin.value)
+const canDelete = computed(() => isAdmin.value)
 
 // ✅ State untuk bulk delete
 const selectedJadwal = ref([])
@@ -282,6 +350,19 @@ const handleDelete = (no) => {
 onMounted(() => {
   fetchList()
   fetchDaftarAlat()
+  startAutoRefresh()
+
+  const onVisibility = () => {
+    if (document.visibilityState === 'visible') {
+      localStorage.removeItem('jadwal_kalibrasi_cache')
+      fetchList(true)
+    }
+  }
+  document.addEventListener('visibilitychange', onVisibility)
+  onUnmounted(() => {
+    document.removeEventListener('visibilitychange', onVisibility)
+    stopAutoRefresh()
+  })
 })
 </script>
 
@@ -295,9 +376,23 @@ onMounted(() => {
           <!-- <small class="text-muted">No Reff: AGIS-WI-ENG-016-LD1_v5.0</small><br> -->
            <small class="text-muted">No Reff: {{ documentRefCalibration }}</small>
         </div>
-        <button v-if="canCreate" class="btn btn-info" @click="openCreateModal">
-          <i class="fas fa-plus mr-1"></i> Tambah Jadwal
-        </button>
+        <div class="d-flex align-items-center">
+          <!-- Export / Import — hanya admin -->
+          <div v-if="isAdmin" class="btn-group mr-2">
+            <button class="btn btn-sm btn-outline-success" @click="exportJadwalKalibrasi(refJadwal)" title="Export ke Excel">
+              <i class="fas fa-file-excel mr-1"></i>Export
+            </button>
+            <button class="btn btn-sm btn-outline-secondary" @click="downloadJadwalKalibrasiTemplate" title="Download template Excel">
+              <i class="fas fa-download mr-1"></i>Template
+            </button>
+            <button class="btn btn-sm btn-outline-primary" @click="openImportModal" title="Import dari Excel">
+              <i class="fas fa-file-upload mr-1"></i>Import
+            </button>
+          </div>
+          <button v-if="canCreate" class="btn btn-info" @click="openCreateModal">
+            <i class="fas fa-plus mr-1"></i> Tambah Jadwal
+          </button>
+        </div>
       </div>
     </section>
 
@@ -409,6 +504,92 @@ onMounted(() => {
         </div>
       </div>
     </section>
+
+    <!-- Modal Import Excel -->
+    <div
+      v-if="showImportModal"
+      class="modal fade show"
+      tabindex="-1"
+      style="display: block; background-color: rgba(0,0,0,0.5);"
+    >
+      <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title"><i class="fas fa-file-upload mr-2"></i>Import Jadwal Kalibrasi</h5>
+            <button type="button" class="close" @click="closeImportModal">&times;</button>
+          </div>
+          <div class="modal-body">
+            <div class="alert alert-info">
+              <i class="fas fa-info-circle mr-1"></i>
+              Upload file Excel (.xlsx) sesuai format template. Kolom <strong>No.ID</strong> wajib diisi.
+              <a href="#" class="ml-2" @click.prevent="downloadJadwalKalibrasiTemplate">
+                <i class="fas fa-download mr-1"></i>Download Template
+              </a>
+            </div>
+
+            <div class="form-group">
+              <label>Pilih File Excel</label>
+              <input
+                ref="importFileRef"
+                type="file"
+                accept=".xlsx,.xls"
+                class="form-control-file"
+                @change="handleFileChange"
+                :disabled="importing"
+              />
+            </div>
+
+            <div v-if="importErrors.length" class="alert alert-danger">
+              <strong>Ditemukan error:</strong>
+              <ul class="mb-0 mt-1">
+                <li v-for="(err, i) in importErrors" :key="i">{{ err }}</li>
+              </ul>
+            </div>
+
+            <div v-if="showPreview && importPreview.length" class="mt-3">
+              <p class="font-weight-bold">Preview <span class="badge badge-primary">{{ importPreview.length }} baris</span></p>
+              <div style="max-height: 300px; overflow-y: auto;">
+                <table class="table table-sm table-bordered">
+                  <thead class="thead-light">
+                    <tr>
+                      <th>No.ID</th>
+                      <th>Description</th>
+                      <th>Calibration ID</th>
+                      <th>Parameter</th>
+                      <th>Due Date</th>
+                      <th>Criticality</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="(row, i) in importPreview" :key="i">
+                      <td>{{ row.no_id || '-' }}</td>
+                      <td>{{ row.description || '-' }}</td>
+                      <td>{{ row.cal_id || '-' }}</td>
+                      <td>{{ row.parameter || '-' }}</td>
+                      <td>{{ row.due_date || '-' }}</td>
+                      <td>{{ row.criticality || '-' }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary" @click="closeImportModal" :disabled="importing">Batal</button>
+            <button
+              class="btn btn-primary"
+              @click="confirmImport"
+              :disabled="importing || !importPreview.length || importErrors.length > 0"
+            >
+              <span v-if="importing">
+                <span class="spinner-border spinner-border-sm mr-1"></span>Mengimport...
+              </span>
+              <span v-else><i class="fas fa-check mr-1"></i>Import {{ importPreview.length }} Data</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
 
     <!-- ✅ Modal Create/Edit -->
     <div 

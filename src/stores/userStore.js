@@ -6,7 +6,7 @@ import idleTimerService from '@/services/idleTimerService'
 const USER_STORAGE_KEY = 'current_user'
 const SESSION_STORAGE_KEY = 'session_timestamp'
 const PERMISSIONS_CHANGED_EVENT = 'permissions-changed'
-const SESSION_TIMEOUT = 8 * 60 * 60 * 1000 // 8 jam dalam milliseconds
+const SESSION_TIMEOUT = 8 * 60 * 60 * 1000 // 8 jam
 
 // Singleton store dengan reactive state
 const state = reactive({
@@ -32,28 +32,17 @@ const loadPermissionsForUser = (user, forceRefresh = false) => {
  * Set user yang sedang login
  */
 const setUser = (user) => {
-  console.log('[userStore] setUser - Setting user:', user)
-
   state.user = user
   localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user))
-  
-  // Simpan timestamp session saat login
-  const sessionTimestamp = Date.now()
-  localStorage.setItem(SESSION_STORAGE_KEY, sessionTimestamp.toString())
+  localStorage.setItem(SESSION_STORAGE_KEY, Date.now().toString())
 
-  // Load permissions untuk user ini
   if (user && user.id) {
     state.permissions = loadPermissionsForUser(user)
-    console.log('[userStore] setUser - Loaded permissions:', state.permissions)
   } else {
     state.permissions = []
-    console.warn('[userStore] setUser - No user ID, permissions set to empty')
   }
 
-  // Start idle timer saat login
   idleTimerService.startIdleTimer()
-
-  console.log('[userStore] setUser - Final state:', { user: state.user, permissions: state.permissions })
 }
 
 /**

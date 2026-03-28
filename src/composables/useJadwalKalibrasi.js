@@ -1,5 +1,5 @@
 // src/composables/useJadwalKalibrasi.js
-import { ref, nextTick, watch } from 'vue'
+import { ref, nextTick, watch, onUnmounted } from 'vue'
 import { jadwalKalibrasiApi } from '@/api'
 import {useLogAktivitas} from '@/composables/useLogAktivitas'
 
@@ -13,6 +13,7 @@ export function useJadwalKalibrasi() {
   const isSaving = ref(false)
   const isDeleting = ref(false)
   let dataTableInstance = null
+  let refreshTimer = null
 
   // === Inisialisasi DataTables ===
   const initDataTable = async () => {
@@ -159,6 +160,24 @@ export function useJadwalKalibrasi() {
     }
   }
 
+  // === Auto-refresh setiap 1 menit ===
+  const startAutoRefresh = () => {
+    stopAutoRefresh()
+    refreshTimer = setInterval(async () => {
+      localStorage.removeItem(CACHE_KEY)
+      await fetchList(true)
+    }, CACHE_DURATION)
+  }
+
+  const stopAutoRefresh = () => {
+    if (refreshTimer) {
+      clearInterval(refreshTimer)
+      refreshTimer = null
+    }
+  }
+
+  onUnmounted(() => stopAutoRefresh())
+
   // DI DALAM FUNGSI useJadwalKalibrasi()
 const { createLog } = useLogAktivitas()
 
@@ -203,6 +222,9 @@ const saveLogActivity = async (rowData) => {
     deleteJadwal,
     isSaving,
     isDeleting,
-    saveLogActivity
+    saveLogActivity,
+    initDataTable,
+    startAutoRefresh,
+    stopAutoRefresh
   }
 }

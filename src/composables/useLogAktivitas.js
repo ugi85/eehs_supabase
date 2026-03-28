@@ -1,10 +1,10 @@
 // src/composables/useLogAktivitas.js
-import { ref, computed, nextTick } from 'vue' // ✅ HAPUS: watch (tidak digunakan)
+import { ref, computed, nextTick } from 'vue'
 import { logAktivitasApi } from '@/api'
 
 export function useLogAktivitas() {
 
-  // ✅ STATE MANAGEMENT
+  // STATE
   const loading = ref(false)
   const isSaving = ref(false) 
   const logs = ref([])
@@ -20,15 +20,16 @@ export function useLogAktivitas() {
     jenis: '',
     tanggal: '',
     petugas: '',
-    keterangan: ''
+    keterangan: '',
+    backlog_status: null,
+    backlog_notes: ''
   })
   const keteranganError = ref(false)
 
-  // ✅ STATE BARU UNTUK DATATABLES
-  const dataTableInstance = ref(null)
-  const isDataTableInitialized = ref(false)
+  // DataTable untuk allAktivitas — dikelola di view (bukan composable)
+  const backlogFilter = ref('all')
+  const displayedLogs = ref([])
 
-  // ✅ OPTIONS LENGKAP
   const months = [
     'January', 'February', 'March', 'April', 'May', 'June',
     'July', 'August', 'September', 'October', 'November', 'December'
@@ -50,90 +51,48 @@ export function useLogAktivitas() {
     { label: 'Kalibrasi', value: 'Kalibrasi' }
   ]
 
-  // ════════════════════════════════════════════════════════════════
-  // ✅ HELPER: FORMAT TANGGAL (DIPERBAIKI - SUPPORT SEMUA FORMAT)
-  // ════════════════════════════════════════════════════════════════
+  // ── Format helpers ────────────────────────────────────────────────────────
 
-  // Konversi ke format input (YYYY-MM-DD) untuk input type="date"
   function formatDateForInput(dateString) {
     if (!dateString || dateString === '-' || dateString === 'Invalid date') return ''
-
-    // Format 1: dd/mm/yyyy atau d/m/yyyy
     if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(dateString)) {
-      const parts = dateString.split('/')
-      const day = String(parts[0]).padStart(2, '0')
-      const month = String(parts[1]).padStart(2, '0')
-      const year = parts[2]
-      return `${year}-${month}-${day}`
+      const [d, m, y] = dateString.split('/')
+      return `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`
     }
-
-    // Format 2: YYYY-MM-DD (sudah benar, pastikan padding)
     if (/^\d{4}-\d{1,2}-\d{1,2}$/.test(dateString)) {
-      const parts = dateString.split('-')
-      const year = parts[0]
-      const month = String(parts[1]).padStart(2, '0')
-      const day = String(parts[2]).padStart(2, '0')
-      return `${year}-${month}-${day}`
+      const [y, m, d] = dateString.split('-')
+      return `${y}-${String(m).padStart(2,'0')}-${String(d).padStart(2,'0')}`
     }
-
-    // Format 3: ISO String atau format lain
     try {
       const date = new Date(dateString)
       if (!isNaN(date.getTime())) {
-        const year = date.getFullYear()
-        const month = String(date.getMonth() + 1).padStart(2, '0')
-        const day = String(date.getDate()).padStart(2, '0')
-        return `${year}-${month}-${day}`
+        return `${date.getFullYear()}-${String(date.getMonth()+1).padStart(2,'0')}-${String(date.getDate()).padStart(2,'0')}`
       }
-    } catch (e) {
-      console.warn('Error formatting date for input:', dateString, e)
-    }
-
-    return '' // Fallback ke string kosong
+    } catch (e) {}
+    return ''
   }
 
-  // Konversi ke format display (dd/mm/yyyy)
   function formatDateForDisplay(dateString) {
     if (!dateString || dateString === '-' || dateString === 'Invalid date') return '-'
-
-    // Format YYYY-MM-DD (dari input type="date")
     if (/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
-      const parts = dateString.split('-')
-      const year = parts[0]
-      const month = parts[1]
-      const day = parts[2]
-      return `${day}/${month}/${year}`
+      const [y, m, d] = dateString.split('-')
+      return `${d}/${m}/${y}`
     }
-
-    // Format dd/mm/yyyy (sudah benar)
     if (/^\d{1,2}\/\d{1,2}\/\d{4}$/.test(dateString)) {
-      const parts = dateString.split('/')
-      const day = String(parts[0]).padStart(2, '0')
-      const month = String(parts[1]).padStart(2, '0')
-      const year = parts[2]
-      return `${day}/${month}/${year}`
+      const [d, m, y] = dateString.split('/')
+      return `${String(d).padStart(2,'0')}/${String(m).padStart(2,'0')}/${y}`
     }
-
-    // Format ISO string atau Date object
     try {
       const date = new Date(dateString)
       if (!isNaN(date.getTime())) {
-        const day = String(date.getDate()).padStart(2, '0')
-        const month = String(date.getMonth() + 1).padStart(2, '0')
-        const year = date.getFullYear()
-        return `${day}/${month}/${year}`
+        return `${String(date.getDate()).padStart(2,'0')}/${String(date.getMonth()+1).padStart(2,'0')}/${date.getFullYear()}`
       }
-    } catch (e) {
-      console.warn('Error formatting date for display:', dateString, e)
-    }
-
+    } catch (e) {}
     return dateString || '-'
   }
 
-  // ════════════════════════════════════════════════════════════════
-  // ✅ COMPUTED PROPERTIES (DIPERBAIKI DENGAN SAFEGUARD)
-  // ════════════════════════════════════════════════════════════════
-  
+  // ── Computed ──────────────────────────────────────────────────────────────
+
   const filteredLogs = computed(() => {
     if (!Array.isArray(logs.value)) return []
     return logs.value.filter(log => {
@@ -151,23 +110,13 @@ export function useLogAktivitas() {
   })
 
   const allActivityLogs = computed(() => {
-    if (!Array.isArray(logs.value)) {
-      console.warn('[useLogAktivitas] logs.value is not an array:', logs.value)
-      return []
-    }
-    
+    if (!Array.isArray(logs.value)) return []
     return logs.value.map(log => {
-      if (typeof log !== 'object' || log === null) {
-        return { ...log, status: 'Belum', formattedDate: '-' }
-      }
-      
-      const status = log.status || (log.tanggal && log.petugas ? 'Selesai' : 'Belum')
-      const formattedDate = formatDateForDisplay(log.tanggal)
-      
+      if (typeof log !== 'object' || log === null) return { ...log, status: 'Belum', formattedDate: '-' }
       return {
         ...log,
-        status,
-        formattedDate,
+        status: log.status || (log.tanggal && log.petugas ? 'Selesai' : 'Belum'),
+        formattedDate: formatDateForDisplay(log.tanggal),
         description: log.description || log.type_model || '-',
         type_model: log.type_model || '-',
         sn: log.sn || '-'
@@ -175,89 +124,29 @@ export function useLogAktivitas() {
     })
   })
 
-  const isFormValid = computed(() => {
-    return formData.value.keterangan?.trim() !== ''
-  })
+  const backlogCounts = computed(() => ({
+    pending:   allActivityLogs.value.filter(l => l.backlog_status === 'pending').length,
+    completed: allActivityLogs.value.filter(l => l.backlog_status === 'completed').length,
+  }))
 
-  // ════════════════════════════════════════════════════════════════
-  // ✅ DATATABLES INTEGRATION (DIPERBAIKI)
-  // ════════════════════════════════════════════════════════════════
-  
-  const initDataTable = async (tableSelector = '.jadwal-kalibrasi-table') => {
-    await nextTick()
-    
-    // Destroy instance lama
-    if (dataTableInstance.value) {
-      try {
-        dataTableInstance.value.destroy(true)
-      } catch (e) {
-        console.warn('Error destroying DataTable:', e)
-      }
-      dataTableInstance.value = null
-      isDataTableInitialized.value = false
-    }
+  const isFormValid = computed(() => formData.value.keterangan?.trim() !== '')
 
-    const table = document.querySelector(tableSelector)
-    if (!table) {
-      console.warn(`Tabel "${tableSelector}" tidak ditemukan`)
-      return
-    }
-    // Safeguard: skip jika tabel benar-benar kosong (tidak ada tbody sama sekali)
-    const tbody = table.querySelector('tbody')
-    if (!tbody) {
-      console.warn('[DataTables] Tabel tidak punya tbody, lewati inisialisasi')
-      return
-    }
+  // ── DataTable (pola identik dengan useDaftarAlat) ─────────────────────────
 
-    try {
-      // @ts-ignore
-      dataTableInstance.value = $(table).DataTable({
-        paging: true,
-        lengthChange: true,
-        searching: true,
-        ordering: true,
-        info: true,
-        autoWidth: false,
-        responsive: false,
-        scrollX: true,
-        lengthMenu: [
-          [10, 25, 50, 100, -1],
-          [10, 25, 50, 100, "All"]
-        ],
-        language: {
-          url: '//cdn.datatables.net/plug-ins/1.13.4/i18n/id.json',
-          search: "_INPUT_",
-          searchPlaceholder: "Cari data..."
-        },
-        dom: `
-          <'row'<'col-sm-12 col-md-6'l><'col-sm-12 col-md-6'f>>
-          <'row'<'col-sm-12'tr>>
-          <'row'<'col-sm-12 col-md-5'i><'col-sm-12 col-md-7'p>>
-        `.trim()
-      })
-      
-      isDataTableInitialized.value = true
-      console.log('✅ DataTables berhasil diinisialisasi')
-    } catch (error) {
-      console.error('❌ Gagal menginisialisasi DataTables:', error)
-    }
+  // DataTable dikelola di view, bukan di composable
+  const initDataTable = null // placeholder agar tidak break existing imports
+
+  // Filter + update displayedLogs saja — DataTable dikelola sepenuhnya di view
+  const setBacklogFilter = (filter) => {
+    backlogFilter.value = filter
+    const all = allActivityLogs.value
+    if (filter === 'pending')        displayedLogs.value = all.filter(l => l.backlog_status === 'pending')
+    else if (filter === 'completed') displayedLogs.value = all.filter(l => l.backlog_status === 'completed')
+    else if (filter === 'none')      displayedLogs.value = all.filter(l => !l.backlog_status)
+    else                             displayedLogs.value = [...all]
   }
 
-  // Watch untuk re-initialisasi DataTables saat data berubah
-  // ❌ DIHAPUS: Tidak menggunakan watch karena menyebabkan conflict
-  // Gunakan pemanggilan manual di view setelah data dimuat
-
-  // ════════════════════════════════════════════════════════════════
-  // ✅ FETCH & CRUD METHODS (DIPERBAIKI)
-  // ════════════════════════════════════════════════════════════════
-  
-
-      async function refreshDataTable(tableSelector = '.jadwal-kalibrasi-table') {
-      // Tunggu Vue render ulang DOM setelah data berubah
-      await nextTick()
-      await nextTick()
-      initDataTable(tableSelector)
-    }
+  // ── Fetch ─────────────────────────────────────────────────────────────────
 
   async function fetchData() {
     loading.value = true
@@ -271,10 +160,8 @@ export function useLogAktivitas() {
         response = await logAktivitasApi.getAllForPeriod(selectedMonth.value, selectedYear.value)
       }
       logs.value = response.data || []
-      console.log(`✅ Berhasil memuat ${logs.value.length} data`)
       return logs.value
     } catch (error) {
-      console.error('❌ Error fetching data:', error)
       throw error
     } finally {
       loading.value = false
@@ -285,10 +172,7 @@ export function useLogAktivitas() {
     loading.value = true
     try {
       const allLogs = await logAktivitasApi.listLogs()
-      if (!Array.isArray(allLogs)) {
-        throw new Error('Response API tidak valid: data bukan array')
-      }
-      
+      if (!Array.isArray(allLogs)) throw new Error('Response API tidak valid: data bukan array')
       logs.value = allLogs.map(log => ({
         ...log,
         status: log.status || (log.tanggal && log.petugas ? 'Selesai' : 'Belum'),
@@ -297,11 +181,8 @@ export function useLogAktivitas() {
         sn: log.sn || '-',
         formattedDate: formatDateForDisplay(log.tanggal)
       }))
-      
-      console.log(`✅ Berhasil memuat ${logs.value.length} log aktivitas`)
       return logs.value
     } catch (error) {
-      console.error('❌ Error fetching all logs:', error)
       logs.value = []
       return []
     } finally {
@@ -309,20 +190,17 @@ export function useLogAktivitas() {
     }
   }
 
+  // ── CRUD ──────────────────────────────────────────────────────────────────
+
   async function createLog(logData) {
     isSaving.value = true
     loading.value = true
     try {
-      const response = await logAktivitasApi.createLog({
-        ...logData,
-        petugas: logData.petugas || 'Unknown'
-      })
-      console.log('✅ Log berhasil disimpan')
+      const response = await logAktivitasApi.createLog({ ...logData, petugas: logData.petugas || 'Unknown' })
       await fetchAllLogs()
       closeFormDialog()
       return response
     } catch (error) {
-      console.error('❌ Error creating log:', error)
       throw error
     } finally {
       isSaving.value = false
@@ -335,12 +213,10 @@ export function useLogAktivitas() {
     loading.value = true
     try {
       const response = await logAktivitasApi.updateLog(logData)
-      console.log('✅ Log berhasil diupdate')
       await fetchAllLogs()
       closeFormDialog()
       return response
     } catch (error) {
-      console.error('❌ Error updating log:', error)
       throw error
     } finally {
       isSaving.value = false
@@ -349,15 +225,12 @@ export function useLogAktivitas() {
   }
 
   async function deleteLog(no) {
-    // if (!confirm('Apakah Anda yakin ingin menghapus log ini?')) return false
     loading.value = true
     try {
       await logAktivitasApi.delete(no)
-      console.log('✅ Log berhasil dihapus')
       await fetchAllLogs()
       return true
     } catch (error) {
-      console.error('❌ Error deleting log:', error)
       return false
     } finally {
       loading.value = false
@@ -365,50 +238,29 @@ export function useLogAktivitas() {
   }
 
   async function getLogByNo(no) {
-    try {
-      return await logAktivitasApi.getLogByNo(no)
-    } catch (error) {
-      console.error('❌ Error getting log:', error)
-      throw error
-    }
+    return await logAktivitasApi.getLogByNo(no)
   }
 
   async function getDaftarAlat() {
-    try {
-      return await logAktivitasApi.getDaftarAlat()
-    } catch (error) {
-      console.error('❌ Error getting daftar alat:', error)
-      throw error
-    }
+    return await logAktivitasApi.getDaftarAlat()
   }
 
-  // ════════════════════════════════════════════════════════════════
-  // ✅ FORM DIALOG METHODS (DIPERBAIKI - TANPA DUPLICATE)
-  // ════════════════════════════════════════════════════════════════
-  
-  // ✅ FUNGSI TUNGGAL: openFormDialog (DENGAN KONVERSI TANGGAL)
+  // ── Form dialog ───────────────────────────────────────────────────────────
+
   function openFormDialog(mode = 'create', log = null) {
     formMode.value = mode
     currentLog.value = log ? { ...log } : null
-    
-    // Prioritas field: execute_date → tanggal
-    let rawDate = ''
-    if (log) {
-      rawDate = log.execute_date || log.tanggal || ''
-    }
-    
-    // Konversi ke format input (YYYY-MM-DD)
-    const formattedDate = formatDateForInput(rawDate)
-    
+    const rawDate = log ? (log.execute_date || log.tanggal || '') : ''
     formData.value = {
       no_id: log?.no_id || '',
       cal_id: log?.cal_id || '',
       jenis: log?.jenis || '',
-      tanggal: formattedDate, // ✅ FORMAT YANG BENAR UNTUK INPUT
+      tanggal: formatDateForInput(rawDate),
       petugas: log?.petugas || '',
-      keterangan: log?.keterangan || ''
+      keterangan: log?.keterangan || '',
+      backlog_status: log?.backlog_status || null,
+      backlog_notes: log?.backlog_notes || ''
     }
-    
     showFormDialog.value = true
     isSaving.value = false
   }
@@ -425,7 +277,6 @@ export function useLogAktivitas() {
     await fetchData()
   }
 
-  // ✅ FUNGSI TUNGGAL: handleSubmit (DENGAN KONVERSI BALIK KE FORMAT API)
   async function handleSubmit() {
     if (!isFormValid.value) {
       keteranganError.value = true
@@ -433,35 +284,22 @@ export function useLogAktivitas() {
       return
     }
     keteranganError.value = false
-    
-    // Kirim tanggal dalam format YYYY-MM-DD (ISO) agar Supabase bisa simpan dengan benar
-    // formData.tanggal sudah dalam format YYYY-MM-DD dari input type="date"
-    const payload = {
-      ...formData.value,
-      tanggal: formData.value.tanggal  // tetap YYYY-MM-DD, biarkan API handle
-    }
-    
+    const payload = { ...formData.value }
     isSaving.value = true
     try {
       if (formMode.value === 'create') {
         await createLog(payload)
       } else {
-        await updateLog({
-          ...payload,
-          no: currentLog.value?.no || currentLog.value?.log_no || ''
-        })
+        await updateLog({ ...payload, no: currentLog.value?.no || currentLog.value?.log_no || '' })
       }
     } catch (error) {
-      console.error('Form submit error:', error)
       isSaving.value = false
       throw error
     }
   }
 
-  // ════════════════════════════════════════════════════════════════
-  // ✅ HELPER FUNCTIONS
-  // ════════════════════════════════════════════════════════════════
-  
+  // ── Helpers ───────────────────────────────────────────────────────────────
+
   function getStatusBadgeClass(status) {
     if (status === 'Selesai') return 'badge-success'
     if (status === 'Belum') return 'badge-danger'
@@ -482,62 +320,29 @@ export function useLogAktivitas() {
 
   async function initAllActivities() {
     await fetchAllLogs()
+    displayedLogs.value = [...allActivityLogs.value]
+    // DataTable di-init oleh view setelah mount
   }
 
-  // ════════════════════════════════════════════════════════════════
-  // ✅ RETURN STATE & METHODS
-  // ════════════════════════════════════════════════════════════════
-  
+  // ── Return ────────────────────────────────────────────────────────────────
+
   return {
-    // State
-    loading,
-    isSaving,
-    logs,
-    currentLog,
-    showFormDialog,
-    formMode,
-    selectedMonth,
-    selectedYear,
-    filterType,
-    formData,
-    keteranganError,
-    dataTableInstance,
-    isDataTableInitialized,
-    
-    // Computed
-    filteredLogs,
-    completedLogs,
-    allActivityLogs,
-    isFormValid,
-    
-    // Options
-    months,
-    years,
-    filterOptions,
-    jenisOptions,
-    
-    // Methods
-    fetchData,
-    fetchAllLogs,
+    loading, isSaving, logs, currentLog, showFormDialog, formMode,
+    selectedMonth, selectedYear, filterType, formData, keteranganError,
+    filteredLogs, completedLogs, allActivityLogs, isFormValid,
+    backlogFilter, displayedLogs, backlogCounts,
+    months, years, filterOptions, jenisOptions,
+    fetchData, fetchAllLogs,
     getAllForPeriod: fetchData,
     getLogsByMonthYear: fetchData,
     listLogs: fetchAllLogs,
-    getDaftarAlat,
-    getLogByNo,
-    createLog,
-    updateLog,
-    deleteLog,
-    openFormDialog,      // ✅ HANYA 1 VERSI
-    closeFormDialog,
-    handleFilterChange,
-    handleSubmit,         // ✅ HANYA 1 VERSI
-    getStatusBadgeClass,
-    getJenisBadgeClass,
-    init,
-    initAllActivities,
-    initDataTable,
-    refreshDataTable,
-    formatDateForDisplay,
-    formatDateForInput   // ✅ EKSPOR UNTUK DEBUGGING
+    getDaftarAlat, getLogByNo,
+    createLog, updateLog, deleteLog,
+    openFormDialog, closeFormDialog,
+    handleFilterChange, handleSubmit,
+    getStatusBadgeClass, getJenisBadgeClass,
+    init, initAllActivities,
+    initDataTable, setBacklogFilter,
+    formatDateForDisplay, formatDateForInput
   }
 }

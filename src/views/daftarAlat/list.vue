@@ -3,10 +3,73 @@ import { ref, onMounted, computed, nextTick } from 'vue'
 import { useDaftarAlat } from '@/composables/useDaftarAlat'
 import { useFrontendConfig } from '@/composables/useConfig'
 import { usePermissions } from '@/composables/usePermissions'
+import { useExcelImport } from '@/composables/useExcelImport'
+import { daftarAlatApi } from '@/api'
 
 const { tools, loading, fetchList, saveTool, isSaving, deleteTool, startAutoRefresh, statusFilter, setStatusFilter, initDataTable } = useDaftarAlat()
 const { config } = useFrontendConfig()
 const permission = usePermissions()
+
+const {
+  importing,
+  importErrors,
+  importPreview,
+  showPreview,
+  downloadDaftarAlatTemplate,
+  exportDaftarAlat,
+  parseImportFile,
+  resetImport
+} = useExcelImport()
+
+// Import modal state
+const showImportModal = ref(false)
+const importFileRef = ref(null)
+
+const openImportModal = () => {
+  resetImport()
+  showImportModal.value = true
+}
+
+const closeImportModal = () => {
+  showImportModal.value = false
+  resetImport()
+  if (importFileRef.value) importFileRef.value.value = ''
+}
+
+const handleFileChange = async (e) => {
+  const file = e.target.files[0]
+  if (!file) return
+  await parseImportFile(file, 'daftarAlat')
+}
+
+const confirmImport = async () => {
+  if (!importPreview.value.length || importErrors.value.length) return
+  importing.value = true
+
+  try {
+    const results = await daftarAlatApi.upsertBatch(importPreview.value)
+    const inserted = results.filter(r => r.success && r.action === 'inserted').length
+    const updated = results.filter(r => r.success && r.action === 'updated').length
+    const failed = results.filter(r => !r.success)
+
+    closeImportModal()
+    await fetchList(true)
+    await nextTick()
+    await initDataTable()
+
+    const msg = `${inserted} data baru ditambahkan, ${updated} data diperbarui.`
+    if (failed.length) {
+      const errList = failed.slice(0, 5).map(f => `${f.no_id}: ${f.error}`).join('\n')
+      Swal.fire('Import Selesai', `${msg}\n\nGagal (${failed.length}):\n${errList}`, 'warning')
+    } else {
+      Swal.fire('Berhasil!', msg, 'success')
+    }
+  } catch (err) {
+    Swal.fire('Error!', err.message || 'Gagal import data', 'error')
+  } finally {
+    importing.value = false
+  }
+}
 
 const isLoggedIn = computed(() => permission.isLoggedIn.value)
 const isAdmin = computed(() => ['admin', 'superadmin'].includes(permission.user.value?.role))
@@ -163,6 +226,7 @@ const getEmptyTool = () => ({
   calib_yesno: '',
   calib_schedule: '',
   location: '',
+  status: 'active',
   status_pm: '',
   status_calibration: ''
 })
@@ -217,6 +281,7 @@ const openEditModal = (tool) => {
     calib_yesno: tool.calib_yesno || '',
     calib_schedule: tool.calib_schedule || '',
     location: tool.location || '',
+    status: tool.status || 'active',
     status_pm: tool.status_pm || '',
     status_calibration: tool.status_calibration || ''
   }
@@ -285,6 +350,18 @@ onMounted(async () => {
               :class="statusFilter === 'all' ? 'btn-dark' : 'btn-outline-dark'"
               @click="setStatusFilter('all')"
             >Semua</button>
+          </div>
+          <!-- Export / Import — hanya admin -->
+          <div v-if="isAdmin" class="btn-group mr-2">
+            <button class="btn btn-sm btn-outline-success" @click="exportDaftarAlat(tools)" title="Export ke Excel">
+              <i class="fas fa-file-excel mr-1"></i>Export
+            </button>
+            <button class="btn btn-sm btn-outline-secondary" @click="downloadDaftarAlatTemplate" title="Download template Excel">
+              <i class="fas fa-download mr-1"></i>Template
+            </button>
+            <button class="btn btn-sm btn-outline-primary" @click="openImportModal" title="Import dari Excel">
+              <i class="fas fa-file-upload mr-1"></i>Import
+            </button>
           </div>
           <button v-if="canCreate" class="btn btn-info" @click="openCreateModal">
             <i class="fas fa-plus mr-1"></i> Tambah Alat
@@ -423,8 +500,96 @@ onMounted(async () => {
       </div>
     </section>
 
+    <!-- Modal Import Excel -->
+    <div
+      v-if="showImportModal"
+      class="modal fade show"
+      tabindex="-1"
+      style="display: block; background-color: rgba(0,0,0,0.5);"
+    >
+      <div class="modal-dialog modal-lg">
+        <div class="modal-content">
+          <div class="modal-header">
+            <h5 class="modal-title"><i class="fas fa-file-upload mr-2"></i>Import Daftar Alat</h5>
+            <button type="button" class="close" @click="closeImportModal">&times;</button>
+          </div>
+          <div class="modal-body">
+            <div class="alert alert-info">
+              <i class="fas fa-info-circle mr-1"></i>
+              Upload file Excel (.xlsx) sesuai format template. Kolom <strong>No.ID</strong> wajib diisi.
+              <a href="#" class="ml-2" @click.prevent="downloadDaftarAlatTemplate">
+                <i class="fas fa-download mr-1"></i>Download Template
+              </a>
+            </div>
+
+            <div class="form-group">
+              <label>Pilih File Excel</label>
+              <input
+                ref="importFileRef"
+                type="file"
+                accept=".xlsx,.xls"
+                class="form-control-file"
+                @change="handleFileChange"
+                :disabled="importing"
+              />
+            </div>
+
+            <!-- Error list -->
+            <div v-if="importErrors.length" class="alert alert-danger">
+              <strong>Ditemukan error:</strong>
+              <ul class="mb-0 mt-1">
+                <li v-for="(err, i) in importErrors" :key="i">{{ err }}</li>
+              </ul>
+            </div>
+
+            <!-- Preview table -->
+            <div v-if="showPreview && importPreview.length" class="mt-3">
+              <p class="font-weight-bold">Preview <span class="badge badge-primary">{{ importPreview.length }} baris</span></p>
+              <div style="max-height: 300px; overflow-y: auto;">
+                <table class="table table-sm table-bordered">
+                  <thead class="thead-light">
+                    <tr>
+                      <th>No.ID</th>
+                      <th>Description</th>
+                      <th>Type/Model</th>
+                      <th>PM Y/N</th>
+                      <th>Cal Y/N</th>
+                      <th>Location</th>
+                    </tr>
+                  </thead>
+                  <tbody>
+                    <tr v-for="(row, i) in importPreview" :key="i">
+                      <td>{{ row.no_id || '-' }}</td>
+                      <td>{{ row.description || '-' }}</td>
+                      <td>{{ row.type_model || '-' }}</td>
+                      <td class="text-center">{{ row.pm_overall || '-' }}</td>
+                      <td class="text-center">{{ row.calib_yesno || '-' }}</td>
+                      <td>{{ row.location || '-' }}</td>
+                    </tr>
+                  </tbody>
+                </table>
+              </div>
+            </div>
+          </div>
+          <div class="modal-footer">
+            <button class="btn btn-secondary" @click="closeImportModal" :disabled="importing">Batal</button>
+            <button
+              class="btn btn-primary"
+              @click="confirmImport"
+              :disabled="importing || !importPreview.length || importErrors.length > 0"
+            >
+              <span v-if="importing">
+                <span class="spinner-border spinner-border-sm mr-1"></span>Mengimport...
+              </span>
+              <span v-else><i class="fas fa-check mr-1"></i>Import {{ importPreview.length }} Data</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+
     <!-- Modal Create/Edit -->
-    <div 
+    <div  
       v-if="isModalOpen"
       class="modal fade show" 
       tabindex="-1"
@@ -476,6 +641,13 @@ onMounted(async () => {
                 <div class="form-group">
                   <label>Location</label>
                   <input v-model="editingTool.location" type="text" class="form-control" />
+                </div>
+                <div v-if="isEditMode" class="form-group">
+                  <label>Status Alat</label>
+                  <select v-model="editingTool.status" class="form-control">
+                    <option value="active">Aktif</option>
+                    <option value="obsolete">Obsolete</option>
+                  </select>
                 </div>
               </div>
             </div>
