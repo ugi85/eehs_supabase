@@ -156,55 +156,86 @@ export const jadwalKalibrasiApi = {
   },
 
   /**
-   * UPSERT BATCH: Import banyak baris sekaligus (paralel, efisien)
+   * UPSERT BATCH: Import banyak baris sekaligus
+   * mode: 'upsert' = tambah+update, 'insert_only' = hanya data baru saja
    */
-  async upsertBatch(jadwals) {
+  async upsertBatch(jadwals, mode = 'upsert') {
     const calIds = jadwals.map(j => j.cal_id).filter(Boolean)
 
-    // Satu query untuk ambil semua calibration_id yang sudah ada
     const existingMap = {}
     if (calIds.length) {
       const { data: existingRows } = await supabase
         .from('kalibrasi')
-        .select('no, calibration_id')
+        .select('no, calibration_id, no_id, description, parameter, process_range, reject_error_limit, int, due_date, remark, criticality')
         .in('calibration_id', calIds)
-      ;(existingRows || []).forEach(r => { existingMap[r.calibration_id] = r.no })
+      ;(existingRows || []).forEach(r => { existingMap[r.calibration_id] = r })
     }
 
-    const results = await Promise.allSettled(
-      jadwals.map(async (jadwal) => {
-        const jadwalData = {
-          no_id: jadwal.no_id,
-          description: jadwal.description,
-          calibration_id: jadwal.cal_id,
-          parameter: jadwal.parameter,
-          process_range: jadwal.process_range,
-          reject_error_limit: jadwal.reject_error,
-          int: jadwal.interval,
-          due_date: jadwal.due_date,
-          remark: jadwal.remark,
-          criticality: jadwal.criticality
-        }
+    const toInsert = jadwals.filter(j => !existingMap[j.cal_id])
+    const toUpdate = mode === 'insert_only'
+      ? []
+      : jadwals.filter(j => {
+          if (!existingMap[j.cal_id]) return false
+          const ex = existingMap[j.cal_id]
+          return (
+            (j.no_id || '') !== (ex.no_id || '') ||
+            (j.description || '') !== (ex.description || '') ||
+            (j.parameter || '') !== (ex.parameter || '') ||
+            (j.process_range || '') !== (ex.process_range || '') ||
+            (j.reject_error || '') !== (ex.reject_error_limit || '') ||
+            (j.interval || '') !== (String(ex.int) || '') ||
+            (j.due_date || '') !== (ex.due_date || '') ||
+            (j.remark || '') !== (ex.remark || '') ||
+            (j.criticality || '') !== (ex.criticality || '')
+          )
+        })
 
-        const existingNo = jadwal.cal_id ? existingMap[jadwal.cal_id] : null
-        let result
-        if (existingNo) {
-          result = await supabase.from('kalibrasi').update(jadwalData).eq('no', existingNo).select().single()
-        } else {
-          result = await supabase.from('kalibrasi').insert([jadwalData]).select().single()
-        }
+    const skipped = mode === 'insert_only'
+      ? jadwals.filter(j => existingMap[j.cal_id])
+      : jadwals.filter(j => existingMap[j.cal_id] && !toUpdate.find(u => u.cal_id === j.cal_id))
 
+    const buildData = (jadwal) => ({
+      no_id: jadwal.no_id,
+      description: jadwal.description,
+      calibration_id: jadwal.cal_id,
+      parameter: jadwal.parameter,
+      process_range: jadwal.process_range,
+      reject_error_limit: jadwal.reject_error,
+      int: jadwal.interval,
+      due_date: jadwal.due_date,
+      remark: jadwal.remark,
+      criticality: jadwal.criticality
+    })
+
+    const results = await Promise.allSettled([
+      ...toUpdate.map(async (jadwal) => {
+        const result = await supabase.from('kalibrasi').update(buildData(jadwal)).eq('no', existingMap[jadwal.cal_id].no).select().single()
         if (result.error) throw new Error(result.error.message)
-        return { action: existingNo ? 'updated' : 'inserted', no_id: jadwal.no_id }
+        return { action: 'updated', no_id: jadwal.no_id }
+      }),
+      ...toInsert.map(async (jadwal) => {
+        const result = await supabase.from('kalibrasi').insert([buildData(jadwal)]).select().single()
+        if (result.error) throw new Error(result.error.message)
+        return { action: 'inserted', no_id: jadwal.no_id }
       })
-    )
+    ])
 
-    return results.map((r, i) => ({
-      no_id: jadwals[i].no_id,
+    const processed = [...toUpdate, ...toInsert]
+    const processedResults = results.map((r, i) => ({
+      no_id: processed[i].no_id,
       success: r.status === 'fulfilled',
       action: r.status === 'fulfilled' ? r.value.action : null,
       error: r.status === 'rejected' ? r.reason?.message : null
     }))
+
+    const skippedResults = skipped.map(j => ({
+      no_id: j.no_id,
+      success: true,
+      action: 'skipped',
+      error: null
+    }))
+
+    return [...processedResults, ...skippedResults]
   },
 
   /**

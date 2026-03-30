@@ -7,14 +7,14 @@ const DAFTAR_ALAT_HEADERS = [
   'No.ID', 'Description', 'Type/Model', 'SN', 'Year',
   'Crit Product (Y/N)', 'Crit Process (Y/N)', 'Crit Safety (Y/N)', 'Crit Environment (Y/N)',
   'PM Y/N', 'PM 6 Monthly', 'PM Yearly', 'PM Internal/External',
-  'Calibration Y/N', 'Calibration Schedule', 'Location'
+  'Calibration Y/N', 'Calibration Schedule', 'Area', 'Location'
 ]
 
 const DAFTAR_ALAT_EXAMPLE = [
   'EWT-01', 'Example Equipment', 'Type A', 'SN-001', '2023',
   'Y', 'Y', 'N', 'N',
   'Y', 'Jan, Jul', 'Jan', 'Internal',
-  'Y', 'Jan', 'Lab'
+  'Y', 'Jan', 'Production', 'Lab'
 ]
 
 // Map header Excel → field API
@@ -34,6 +34,7 @@ const DAFTAR_ALAT_MAP = {
   'PM Internal/External': 'pm_internal_external',
   'Calibration Y/N': 'calib_yesno',
   'Calibration Schedule': 'calib_schedule',
+  'Area': 'area',
   'Location': 'location'
 }
 
@@ -66,6 +67,8 @@ export function useExcelImport() {
   const importErrors = ref([])
   const importPreview = ref([])
   const showPreview = ref(false)
+  // Mode import: 'upsert' = tambah+update, 'insert_only' = hanya data baru
+  const importMode = ref('upsert')
 
   // ===== DOWNLOAD TEMPLATE =====
   const downloadDaftarAlatTemplate = () => {
@@ -95,8 +98,8 @@ export function useExcelImport() {
       'PM Internal/External': t.pm_internal_external || '',
       'Calibration Y/N': t.calib_yesno || '',
       'Calibration Schedule': t.calib_schedule || '',
-      'Location': t.location || '',
-      'Status': t.status || 'active'
+      'Area': t.area || '',
+      'Location': t.location || ''
     }))
     exportToExcel(rows, 'daftar_alat.xlsx', 'Daftar Alat')
   }
@@ -129,15 +132,13 @@ export function useExcelImport() {
       if (!rows.length) throw new Error('File kosong atau tidak ada data')
 
       const fieldMap = type === 'daftarAlat' ? DAFTAR_ALAT_MAP : JADWAL_KALIBRASI_MAP
-      const requiredField = type === 'daftarAlat' ? 'No.ID' : 'No.ID'
 
       const errors = []
       const mapped = rows.map((row, i) => {
-        const rowNum = i + 2 // +2 karena row 1 = header
-        if (!row[requiredField]) {
+        const rowNum = i + 2
+        if (!row['No.ID']) {
           errors.push(`Baris ${rowNum}: No.ID wajib diisi`)
         }
-        // Map ke field API
         const obj = {}
         for (const [excelKey, apiKey] of Object.entries(fieldMap)) {
           obj[apiKey] = String(row[excelKey] ?? '').trim()
@@ -168,6 +169,7 @@ export function useExcelImport() {
     importErrors,
     importPreview,
     showPreview,
+    importMode,
     downloadDaftarAlatTemplate,
     downloadJadwalKalibrasiTemplate,
     exportDaftarAlat,

@@ -27,6 +27,7 @@ const {
   importErrors,
   importPreview,
   showPreview,
+  importMode,
   downloadJadwalKalibrasiTemplate,
   exportJadwalKalibrasi,
   parseImportFile,
@@ -39,6 +40,7 @@ const importFileRef = ref(null)
 
 const openImportModal = () => {
   resetImport()
+  importMode.value = 'upsert'
   showImportModal.value = true
 }
 
@@ -59,17 +61,23 @@ const confirmImport = async () => {
   importing.value = true
 
   try {
-    const results = await jadwalKalibrasiApi.upsertBatch(importPreview.value)
+    const results = await jadwalKalibrasiApi.upsertBatch(importPreview.value, importMode.value)
     const inserted = results.filter(r => r.success && r.action === 'inserted').length
     const updated = results.filter(r => r.success && r.action === 'updated').length
+    const skipped = results.filter(r => r.success && r.action === 'skipped').length
     const failed = results.filter(r => !r.success)
 
     closeImportModal()
-    await fetchList(true)
+    await fetchList(true) // loading = true → Vue render spinner → loading = false → Vue render tabel → initDataTable
     await nextTick()
     await initDataTable()
 
-    const msg = `${inserted} data baru ditambahkan, ${updated} data diperbarui.`
+    const parts = []
+    if (inserted) parts.push(`${inserted} data baru ditambahkan`)
+    if (updated) parts.push(`${updated} data diperbarui`)
+    if (skipped) parts.push(`${skipped} data tidak berubah (dilewati)`)
+    const msg = parts.join(', ') + '.'
+
     if (failed.length) {
       const errList = failed.slice(0, 5).map(f => `${f.no_id}: ${f.error}`).join('\n')
       Swal.fire('Import Selesai', `${msg}\n\nGagal (${failed.length}):\n${errList}`, 'warning')
@@ -347,15 +355,17 @@ const handleDelete = (no) => {
   deleteJadwal(no)
 }
 
-onMounted(() => {
-  fetchList()
+onMounted(async () => {
+  await fetchList()
+  await nextTick()
+  await initDataTable()
   fetchDaftarAlat()
   startAutoRefresh()
 
   const onVisibility = () => {
     if (document.visibilityState === 'visible') {
       localStorage.removeItem('jadwal_kalibrasi_cache')
-      fetchList(true)
+      fetchList(true, true) // silent
     }
   }
   document.addEventListener('visibilitychange', onVisibility)
@@ -525,6 +535,25 @@ onMounted(() => {
               <a href="#" class="ml-2" @click.prevent="downloadJadwalKalibrasiTemplate">
                 <i class="fas fa-download mr-1"></i>Download Template
               </a>
+            </div>
+
+            <!-- Mode Import -->
+            <div class="form-group">
+              <label class="font-weight-bold">Mode Import</label>
+              <div class="d-flex">
+                <div class="custom-control custom-radio mr-4">
+                  <input type="radio" id="kal-mode-upsert" class="custom-control-input" value="upsert" v-model="importMode" />
+                  <label class="custom-control-label" for="kal-mode-upsert">
+                    Tambah + Update <small class="text-muted">(data baru ditambah, data berubah diupdate, data sama dilewati)</small>
+                  </label>
+                </div>
+                <div class="custom-control custom-radio">
+                  <input type="radio" id="kal-mode-insert" class="custom-control-input" value="insert_only" v-model="importMode" />
+                  <label class="custom-control-label" for="kal-mode-insert">
+                    Hanya Data Baru <small class="text-muted">(data yang sudah ada tidak disentuh)</small>
+                  </label>
+                </div>
+              </div>
             </div>
 
             <div class="form-group">

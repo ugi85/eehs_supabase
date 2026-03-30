@@ -82,7 +82,7 @@ onUnmounted(() => {
 
           <!-- Dashboard -->
           <li class="nav-item">
-            <RouterLink to="/dashChart" class="nav-link">
+            <RouterLink to="/dashChart" class="nav-link" :class="{ active: route.path === '/dashChart' || route.path === '/' }">
               <i class="fas fa-tachometer-alt nav-icon"></i>
               <p>Dashboard Chart</p>
             </RouterLink>
@@ -90,7 +90,7 @@ onUnmounted(() => {
 
           <!-- Data Users -->
           <li class="nav-item" v-if="canViewUsers">
-            <RouterLink to="/user" class="nav-link">
+            <RouterLink to="/user" class="nav-link" :class="{ active: route.path === '/user' }">
               <i class="fas fa-users nav-icon"></i>
               <p>Data Users</p>
             </RouterLink>
@@ -98,7 +98,7 @@ onUnmounted(() => {
 
           <!-- Daftar Alat -->
           <li class="nav-item" v-if="canViewDaftarAlat">
-            <RouterLink to="/daftarAlat" class="nav-link">
+            <RouterLink to="/daftarAlat" class="nav-link" :class="{ active: route.path === '/daftarAlat' }">
               <i class="fas fa-tools nav-icon"></i>
               <p>Daftar Alat</p>
             </RouterLink>
@@ -106,7 +106,7 @@ onUnmounted(() => {
 
           <!-- Jadwal Kalibrasi -->
           <li class="nav-item" v-if="canViewJadwalKalibrasi">
-            <RouterLink to="/jadwalKalibrasi" class="nav-link">
+            <RouterLink to="/jadwalKalibrasi" class="nav-link" :class="{ active: route.path === '/jadwalKalibrasi' }">
               <i class="fas fa-balance-scale nav-icon"></i>
               <p>Jadwal Kalibrasi</p>
             </RouterLink>
@@ -128,19 +128,19 @@ onUnmounted(() => {
             </a>
             <ul class="nav nav-treeview" v-show="logAktivitasOpen">
               <li class="nav-item">
-                <RouterLink to="/logCal" class="nav-link">
+                <RouterLink to="/logCal" class="nav-link" :class="{ active: route.path === '/logCal' }">
                   <i class="far fa-circle nav-icon"></i>
                   <p>Log Kalibrasi</p>
                 </RouterLink>
               </li>
               <li class="nav-item">
-                <RouterLink to="/logPm" class="nav-link">
+                <RouterLink to="/logPm" class="nav-link" :class="{ active: route.path === '/logPm' }">
                   <i class="far fa-circle nav-icon"></i>
                   <p>Log PM</p>
                 </RouterLink>
               </li>
-              <li class="nav-item" v-if="isLoggedIn">
-                <RouterLink to="/allAktivitas" class="nav-link">
+              <li class="nav-item">
+                <RouterLink to="/allAktivitas" class="nav-link" :class="{ active: route.path === '/allAktivitas' }">
                   <i class="far fa-circle nav-icon"></i>
                   <p>All Aktivitas</p>
                 </RouterLink>
@@ -164,13 +164,13 @@ onUnmounted(() => {
             </a>
             <ul class="nav nav-treeview" v-show="settingsOpen">
               <li class="nav-item" v-if="canViewConfig">
-                <RouterLink to="/configurasi" class="nav-link">
+                <RouterLink to="/configurasi" class="nav-link" :class="{ active: route.path === '/configurasi' }">
                   <i class="far fa-circle nav-icon"></i>
                   <p>Konfigurasi Sistem</p>
                 </RouterLink>
               </li>
               <li class="nav-item" v-if="isSuperAdmin">
-                <RouterLink to="/roles" class="nav-link">
+                <RouterLink to="/roles" class="nav-link" :class="{ active: route.path === '/roles' }">
                   <i class="far fa-circle nav-icon"></i>
                   <p>Roles & Permissions</p>
                 </RouterLink>

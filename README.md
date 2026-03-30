@@ -307,5 +307,7 @@ src/
 - **Encoding fix:** Karakter `°C`, `°F`, `±` dari data lama yang corrupt di-fix otomatis saat fetch — pengecekan degree symbol dilakukan sebelum plus-minus
 - **Obsolete sync:** Status `obsolete` di `daftaralat` di-update otomatis via DB trigger `trg_sync_daftaralat_status` saat log aktivitas berisi keterangan `obsolete`. Keterangan historis di log tidak ikut berubah saat status alat dikembalikan ke aktif
 - **Import upsert:** Daftar Alat menggunakan `no_id` sebagai key upsert, Jadwal Kalibrasi menggunakan `calibration_id`
+- **Import tidak mempengaruhi log aktivitas:** Tabel `logaktivitas` tidak disentuh saat import. Semua riwayat aktivitas tetap aman. Import hanya update/insert di `daftaralat` dan `kalibrasi`
+- **Perubahan No.ID saat import:** Jika `no_id` alat diganti di file Excel (misal `EWT-01` → `EWT-001`), sistem akan membuat entri baru karena key tidak cocok. Log aktivitas lama yang mereferensi `no_id` lama tetap ada sebagai catatan historis dan tidak ikut berubah — ini by design karena log adalah rekaman permanen
 - **Sequence workaround:** Kolom `no` di `daftaralat` menggunakan fetch `MAX(no)` + assign manual untuk insert baru karena sequence DB sempat tidak sinkron
 - **Supabase RPC:** Menggunakan `try/catch` bukan `.catch()` karena `supabase.rpc()` mengembalikan PromiseLike bukan Promise

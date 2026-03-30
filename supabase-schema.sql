@@ -1,166 +1,111 @@
--- Supabase Database Schema
+-- ============================================================
+-- Supabase Actual Database Schema
 -- EEHS QMS System
+-- Last updated: sesuai screenshot Supabase dashboard
+-- ============================================================
 
--- ============================================
+-- ============================================================
+-- Table: daftaralat
+-- ============================================================
+CREATE TABLE IF NOT EXISTS daftaralat (
+  no        int8 PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+  no_id     text,
+  description text,
+  type_model  text,
+  sn          text,
+  year        text,
+  product     text,   -- Crit Product (Y/N)
+  process     text,   -- Crit Process (Y/N)
+  safety      text,   -- Crit Safety (Y/N)
+  environment text,   -- Crit Environment (Y/N)
+  pm_yn       text,   -- PM Y/N
+  "6_monthly" text,   -- PM 6 Monthly schedule
+  yearly      text,   -- PM Yearly schedule
+  internal_external text, -- PM Internal/External
+  y_n         text,   -- Calibration Y/N
+  schedule    text,   -- Calibration Schedule
+  area        text,
+  location    text,
+  status      text    -- 'active' | 'obsolete'
+);
+
+-- ============================================================
+-- Table: kalibrasi
+-- ============================================================
+CREATE TABLE IF NOT EXISTS kalibrasi (
+  no               int8 PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+  no_id            text,
+  description      text,
+  calibration_id   text,
+  parameter        text,
+  process_range    text,
+  reject_error_limit text,
+  int              text,   -- Interval (bulan)
+  due_date         text,   -- Bulan jatuh tempo (e.g. 'Jan')
+  remark           text,
+  criticality      text
+);
+
+-- ============================================================
+-- Table: logaktivitas
+-- ============================================================
+CREATE TABLE IF NOT EXISTS logaktivitas (
+  no                 int8 PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+  no_id              text,
+  calibration_id     text,
+  jenis              text,   -- 'Kalibrasi' | 'PM'
+  execute_date       text,   -- Format YYYY-MM-DD
+  pic                text,
+  keterangan         text,
+  backlog_status     varchar(20),  -- null | 'pending' | 'completed'
+  backlog_notes      text,
+  backlog_updated_at timestamptz,
+  backlog_updated_by varchar(100)
+);
+
+-- ============================================================
 -- Table: users
--- ============================================
+-- ============================================================
 CREATE TABLE IF NOT EXISTS users (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  nama VARCHAR(255) NOT NULL,
-  inisial VARCHAR(10),
-  email VARCHAR(255) UNIQUE NOT NULL,
-  password_hash VARCHAR(255) NOT NULL,
-  role VARCHAR(50) NOT NULL DEFAULT 'user',
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  id_user    text PRIMARY KEY,
+  nama       text NOT NULL,
+  inisial    text,
+  email      text UNIQUE NOT NULL,
+  password   text NOT NULL,  -- SHA-256 hash
+  role       text NOT NULL DEFAULT 'user',  -- 'superadmin' | 'admin' | 'user'
+  "createdAt" text,
+  "updatedAt" text
 );
 
--- Index untuk performa
-CREATE INDEX idx_users_email ON users(email);
-CREATE INDEX idx_users_role ON users(role);
-
--- ============================================
--- Table: daftar_alat
--- ============================================
-CREATE TABLE IF NOT EXISTS daftar_alat (
-  no SERIAL PRIMARY KEY,
-  no_id VARCHAR(50) UNIQUE,
-  description TEXT,
-  type_model VARCHAR(255),
-  sn VARCHAR(255),
-  year INTEGER,
-  crit_product VARCHAR(50),
-  crit_process VARCHAR(50),
-  crit_safety VARCHAR(50),
-  crit_env VARCHAR(50),
-  pm_overall VARCHAR(50),
-  pm_6monthly VARCHAR(50),
-  pm_yearly VARCHAR(50),
-  pm_internal_external VARCHAR(50),
-  calib_yesno VARCHAR(10),
-  calib_schedule VARCHAR(255),
-  location VARCHAR(255),
-  status_pm VARCHAR(50),
-  status_calibration VARCHAR(50),
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
--- Index untuk performa
-CREATE INDEX idx_daftar_alat_no_id ON daftar_alat(no_id);
-CREATE INDEX idx_daftar_alat_location ON daftar_alat(location);
-
--- ============================================
--- Table: jadwal_kalibrasi
--- ============================================
-CREATE TABLE IF NOT EXISTS jadwal_kalibrasi (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  alat_no INTEGER REFERENCES daftar_alat(no) ON DELETE CASCADE,
-  tanggal_kalibrasi DATE,
-  tanggal_kalibrasi_berikutnya DATE,
-  status VARCHAR(50),
-  keterangan TEXT,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
--- Index untuk performa
-CREATE INDEX idx_jadwal_kalibrasi_alat ON jadwal_kalibrasi(alat_no);
-CREATE INDEX idx_jadwal_kalibrasi_tanggal ON jadwal_kalibrasi(tanggal_kalibrasi);
-
--- ============================================
--- Table: log_aktivitas
--- ============================================
-CREATE TABLE IF NOT EXISTS log_aktivitas (
-  id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-  type VARCHAR(50) NOT NULL, -- 'kalibrasi', 'pm', 'general'
-  alat_no INTEGER REFERENCES daftar_alat(no) ON DELETE SET NULL,
-  user_id UUID REFERENCES users(id) ON DELETE SET NULL,
-  aktivitas TEXT NOT NULL,
-  tanggal DATE NOT NULL,
-  keterangan TEXT,
-  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
-);
-
--- Index untuk performa
-CREATE INDEX idx_log_aktivitas_type ON log_aktivitas(type);
-CREATE INDEX idx_log_aktivitas_tanggal ON log_aktivitas(tanggal);
-CREATE INDEX idx_log_aktivitas_alat ON log_aktivitas(alat_no);
-
--- ============================================
+-- ============================================================
 -- Table: config
--- ============================================
+-- ============================================================
 CREATE TABLE IF NOT EXISTS config (
-  key VARCHAR(255) PRIMARY KEY,
-  value JSONB NOT NULL,
-  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+  id        int8 PRIMARY KEY GENERATED ALWAYS AS IDENTITY,
+  deskripsi text,
+  value     text
 );
 
--- ============================================
--- Row Level Security (RLS) Policies
--- ============================================
+-- ============================================================
+-- Indexes
+-- ============================================================
+CREATE INDEX IF NOT EXISTS idx_daftaralat_no_id    ON daftaralat(no_id);
+CREATE INDEX IF NOT EXISTS idx_daftaralat_status   ON daftaralat(status);
+CREATE INDEX IF NOT EXISTS idx_kalibrasi_no_id     ON kalibrasi(no_id);
+CREATE INDEX IF NOT EXISTS idx_kalibrasi_cal_id    ON kalibrasi(calibration_id);
+CREATE INDEX IF NOT EXISTS idx_logaktivitas_no_id  ON logaktivitas(no_id);
+CREATE INDEX IF NOT EXISTS idx_logaktivitas_jenis  ON logaktivitas(jenis);
+CREATE INDEX IF NOT EXISTS idx_logaktivitas_backlog ON logaktivitas(backlog_status) WHERE backlog_status IS NOT NULL;
 
--- Enable RLS
-ALTER TABLE users ENABLE ROW LEVEL SECURITY;
-ALTER TABLE daftar_alat ENABLE ROW LEVEL SECURITY;
-ALTER TABLE jadwal_kalibrasi ENABLE ROW LEVEL SECURITY;
-ALTER TABLE log_aktivitas ENABLE ROW LEVEL SECURITY;
-ALTER TABLE config ENABLE ROW LEVEL SECURITY;
+-- ============================================================
+-- Backlog columns (run if not exists)
+-- ============================================================
+ALTER TABLE logaktivitas ADD COLUMN IF NOT EXISTS backlog_status     varchar(20)   DEFAULT NULL;
+ALTER TABLE logaktivitas ADD COLUMN IF NOT EXISTS backlog_notes      text          DEFAULT NULL;
+ALTER TABLE logaktivitas ADD COLUMN IF NOT EXISTS backlog_updated_at timestamptz   DEFAULT NULL;
+ALTER TABLE logaktivitas ADD COLUMN IF NOT EXISTS backlog_updated_by varchar(100)  DEFAULT NULL;
 
--- Public read access (adjust based on your needs)
-CREATE POLICY "Allow public read access" ON users FOR SELECT USING (true);
-CREATE POLICY "Allow public read access" ON daftar_alat FOR SELECT USING (true);
-CREATE POLICY "Allow public read access" ON jadwal_kalibrasi FOR SELECT USING (true);
-CREATE POLICY "Allow public read access" ON log_aktivitas FOR SELECT USING (true);
-CREATE POLICY "Allow public read access" ON config FOR SELECT USING (true);
-
--- Public write access (adjust based on your needs - consider authentication)
-CREATE POLICY "Allow public insert" ON users FOR INSERT WITH CHECK (true);
-CREATE POLICY "Allow public update" ON users FOR UPDATE USING (true);
-CREATE POLICY "Allow public delete" ON users FOR DELETE USING (true);
-
-CREATE POLICY "Allow public insert" ON daftar_alat FOR INSERT WITH CHECK (true);
-CREATE POLICY "Allow public update" ON daftar_alat FOR UPDATE USING (true);
-CREATE POLICY "Allow public delete" ON daftar_alat FOR DELETE USING (true);
-
-CREATE POLICY "Allow public insert" ON jadwal_kalibrasi FOR INSERT WITH CHECK (true);
-CREATE POLICY "Allow public update" ON jadwal_kalibrasi FOR UPDATE USING (true);
-CREATE POLICY "Allow public delete" ON jadwal_kalibrasi FOR DELETE USING (true);
-
-CREATE POLICY "Allow public insert" ON log_aktivitas FOR INSERT WITH CHECK (true);
-CREATE POLICY "Allow public update" ON log_aktivitas FOR UPDATE USING (true);
-CREATE POLICY "Allow public delete" ON log_aktivitas FOR DELETE USING (true);
-
-CREATE POLICY "Allow public insert" ON config FOR INSERT WITH CHECK (true);
-CREATE POLICY "Allow public update" ON config FOR UPDATE USING (true);
-CREATE POLICY "Allow public delete" ON config FOR DELETE USING (true);
-
--- ============================================
--- Functions & Triggers
--- ============================================
-
--- Auto update updated_at timestamp
-CREATE OR REPLACE FUNCTION update_updated_at_column()
-RETURNS TRIGGER AS $$
-BEGIN
-  NEW.updated_at = NOW();
-  RETURN NEW;
-END;
-$$ LANGUAGE plpgsql;
-
--- Apply trigger to all tables
-CREATE TRIGGER update_users_updated_at BEFORE UPDATE ON users
-  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER update_daftar_alat_updated_at BEFORE UPDATE ON daftar_alat
-  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER update_jadwal_kalibrasi_updated_at BEFORE UPDATE ON jadwal_kalibrasi
-  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER update_log_aktivitas_updated_at BEFORE UPDATE ON log_aktivitas
-  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-
-CREATE TRIGGER update_config_updated_at BEFORE UPDATE ON config
-  FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
+-- ============================================================
+-- DB Trigger: sync daftaralat.status saat log keterangan = 'obsolete'
+-- (trg_sync_daftaralat_status — dibuat manual di Supabase)
+-- ============================================================

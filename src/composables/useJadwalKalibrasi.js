@@ -1,9 +1,8 @@
 // src/composables/useJadwalKalibrasi.js
-import { ref, nextTick, watch, onUnmounted } from 'vue'
+import { ref, nextTick, onUnmounted } from 'vue'
 import { jadwalKalibrasiApi } from '@/api'
-import {useLogAktivitas} from '@/composables/useLogAktivitas'
+import { useLogAktivitas } from '@/composables/useLogAktivitas'
 
-// === Konfigurasi Cache ===
 const CACHE_KEY = 'jadwal_kalibrasi_cache'
 const CACHE_DURATION = 1 * 60 * 1000 // 1 menit
 
@@ -15,51 +14,35 @@ export function useJadwalKalibrasi() {
   let dataTableInstance = null
   let refreshTimer = null
 
-  // === Inisialisasi DataTables ===
+  // === Init DataTables ===
   const initDataTable = async () => {
     await nextTick()
     if (dataTableInstance) {
       dataTableInstance.clear()
-      dataTableInstance.destroy(true) // true = bersihkan wrapper
+      dataTableInstance.destroy(true)
       dataTableInstance = null
     }
-
     const table = document.querySelector('.jadwal-kalibrasi-table')
     if (table) {
-      // @ts-ignore
       dataTableInstance = $(table).DataTable({
         paging: true,
-        lengthChange: true, 
+        lengthChange: true,
         searching: true,
         ordering: true,
-        info: true, 
-        autoWidth: false, // ✅ Ubah jadi false saat scrollX=true
+        info: true,
+        autoWidth: false,
         responsive: false,
         scrollX: true,
-        lengthMenu: [
-          [10, 25, 50, 100, -1],    // nilai -1 = "All"
-          [10, 25, 50, 100, "All"]  // label yang ditampilkan
-        ],
-        language: {
-          // url: '//cdn.datatables.net/plug-ins/1.13.4/i18n/id.json',
-          search: "_INPUT_",
-          searchPlaceholder: "Cari data..."
-        },
+        scrollCollapse: true,
+        lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, 'All']],
+        language: { search: '_INPUT_', searchPlaceholder: 'Cari data...' }
       })
     }
   }
 
-  watch(
-    refJadwal,
-    () => {
-      initDataTable()
-    },
-    { deep: true }
-  )
-
-  // === Fetch dengan Cache + Background Revalidate ===
-  const fetchList = async (force = false) => {
-    loading.value = true
+  // === Fetch dengan Cache ===
+  const fetchList = async (force = false, silent = false) => {
+    if (!silent) loading.value = true
 
     const cached = localStorage.getItem(CACHE_KEY)
     const now = Date.now()
@@ -72,18 +55,13 @@ export function useJadwalKalibrasi() {
           loading.value = false
           return
         }
-      } catch (e) {
-        console.warn('Cache corrupted, ignoring:', e)
-      }
+      } catch (e) { /* cache corrupt */ }
     }
 
     try {
       const result = await jadwalKalibrasiApi.fetchList()
       refJadwal.value = result.success ? result.data : []
-      localStorage.setItem(
-        CACHE_KEY,
-        JSON.stringify({ data: refJadwal.value, timestamp: now })
-      )
+      localStorage.setItem(CACHE_KEY, JSON.stringify({ data: refJadwal.value, timestamp: now }))
     } catch (error) {
       console.error('Gagal mengambil data jadwal:', error)
       refJadwal.value = []
@@ -92,29 +70,23 @@ export function useJadwalKalibrasi() {
     }
   }
 
-  // === CREATE / UPDATE: Simpan jadwal ===
+  // === CREATE / UPDATE ===
   const saveJadwal = async (jadwal) => {
     isSaving.value = true
     try {
       let result
       if (jadwal.no) {
-        // Update existing
         result = await jadwalKalibrasiApi.update(jadwal.no, jadwal)
       } else {
-        // Create new
         result = await jadwalKalibrasiApi.create(jadwal)
       }
-      
-      if (!result.success) {
-        throw new Error(result.message || 'Gagal menyimpan jadwal')
-      }
-      
+      if (!result.success) throw new Error(result.message || 'Gagal menyimpan jadwal')
       localStorage.removeItem(CACHE_KEY)
-      await fetchList(true) // ✅ fetchList handle initDataTable
+      await fetchList(true)
+      await initDataTable()
       Swal.fire('Berhasil!', `Jadwal berhasil ${jadwal.no ? 'diupdate' : 'ditambahkan'}`, 'success')
       return result
     } catch (error) {
-      console.error('Gagal simpan jadwal:', error)
       Swal.fire('Error!', error.message || 'Gagal menyimpan data jadwal', 'error')
       throw error
     } finally {
@@ -122,7 +94,7 @@ export function useJadwalKalibrasi() {
     }
   }
 
-  // === DELETE: Hapus jadwal ===
+  // === DELETE ===
   const deleteJadwal = async (no, description = '') => {
     const confirm = await Swal.fire({
       title: 'Hapus Jadwal?',
@@ -134,97 +106,56 @@ export function useJadwalKalibrasi() {
       confirmButtonText: 'Ya, Hapus!',
       cancelButtonText: 'Batal'
     })
-
     if (!confirm.isConfirmed) return
 
     isDeleting.value = true
     try {
       const result = await jadwalKalibrasiApi.delete(no)
-      if (!result || !result.success) {
-        throw new Error(result?.message || 'Respons tidak valid dari server')
-      }
-
-      // Optimistic update
+      if (!result || !result.success) throw new Error(result?.message || 'Respons tidak valid')
       refJadwal.value = refJadwal.value.filter(j => String(j.no) !== String(no))
       localStorage.removeItem(CACHE_KEY)
-      await fetchList(true) // ✅ fetchList handle initDataTable
-      
+      await fetchList(true)
+      await initDataTable()
       Swal.fire('Berhasil!', 'Jadwal berhasil dihapus', 'success')
       return result
     } catch (error) {
-      console.error('[ERROR] Gagal menghapus jadwal:', error)
-      // ... penanganan error ...
       Swal.fire('Gagal Menghapus!', error.message || 'Terjadi kesalahan', 'error')
     } finally {
       isDeleting.value = false
     }
   }
 
-  // === Auto-refresh setiap 1 menit ===
+  // === Auto-refresh (silent) ===
   const startAutoRefresh = () => {
     stopAutoRefresh()
     refreshTimer = setInterval(async () => {
       localStorage.removeItem(CACHE_KEY)
-      await fetchList(true)
+      await fetchList(true, true)
+      await initDataTable()
     }, CACHE_DURATION)
   }
 
   const stopAutoRefresh = () => {
-    if (refreshTimer) {
-      clearInterval(refreshTimer)
-      refreshTimer = null
-    }
+    if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null }
   }
 
   onUnmounted(() => stopAutoRefresh())
 
-  // DI DALAM FUNGSI useJadwalKalibrasi()
-const { createLog } = useLogAktivitas()
+  const { createLog } = useLogAktivitas()
 
-// TAMBAHKAN FUNGSI INI
-const saveLogActivity = async (rowData) => {
-  if (!rowData.pic || !rowData.execute_date) {
-    throw new Error('PIC dan Execute Date wajib diisi')
+  const saveLogActivity = async (rowData) => {
+    if (!rowData.pic || !rowData.execute_date) throw new Error('PIC dan Execute Date wajib diisi')
+    const jenis = rowData.pm_overall === 'Y' ? 'PM' : 'Kalibrasi'
+    const tanggalString = typeof rowData.execute_date === 'string'
+      ? rowData.execute_date
+      : rowData.execute_date.toISOString().split('T')[0]
+    await createLog({ no_id: rowData.no_id, jenis, tanggal: tanggalString, petugas: rowData.pic, keterangan: rowData.ket || '' })
+    rowData.status = 'Selesai'
   }
-  
-  // Tentukan jenis berdasarkan data
-  const jenis = rowData.pm_overall === 'Y' ? 'PM' : 'Kalibrasi'
-  
-  // Konversi tanggal ke string format YYYY-MM-DD jika belum string
-  const tanggalString = typeof rowData.execute_date === 'string' 
-    ? rowData.execute_date 
-    : rowData.execute_date.toISOString().split('T')[0]
-  
-  const logData = {
-    no_id: rowData.no_id,
-    jenis: jenis,
-    tanggal: tanggalString,
-    petugas: rowData.pic,
-    keterangan: rowData.ket || ''
-  }
-  
-  await createLog(logData)
-  
-  // Update status di UI
-  rowData.status = 'Selesai'
-  rowData.log = {
-    petugas: rowData.pic,
-    tanggal: rowData.execute_date,
-    keterangan: rowData.ket
-  }
-}
 
   return {
-    refJadwal,
-    loading,
-    fetchList,
-    saveJadwal,
-    deleteJadwal,
-    isSaving,
-    isDeleting,
-    saveLogActivity,
-    initDataTable,
-    startAutoRefresh,
-    stopAutoRefresh
+    refJadwal, loading, isSaving, isDeleting,
+    fetchList, saveJadwal, deleteJadwal, saveLogActivity,
+    initDataTable, startAutoRefresh, stopAutoRefresh
   }
 }

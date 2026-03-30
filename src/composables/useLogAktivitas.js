@@ -168,8 +168,8 @@ export function useLogAktivitas() {
     }
   }
 
-  async function fetchAllLogs() {
-    loading.value = true
+  async function fetchAllLogs(silent = false) {
+    if (!silent) loading.value = true
     try {
       const allLogs = await logAktivitasApi.listLogs()
       if (!Array.isArray(allLogs)) throw new Error('Response API tidak valid: data bukan array')
@@ -319,7 +319,7 @@ export function useLogAktivitas() {
   }
 
   async function initAllActivities() {
-    await fetchAllLogs()
+    await fetchAllLogs() // initial load — tampilkan loading
     displayedLogs.value = [...allActivityLogs.value]
     // DataTable di-init oleh view setelah mount
   }
