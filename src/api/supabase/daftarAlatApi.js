@@ -82,26 +82,55 @@ export const daftarAlatApi = {
   },
 
   /**
-   * UPSERT BATCH: Import banyak baris sekaligus (paralel, efisien)
-   * Satu query untuk cek semua no_id yang sudah ada, lalu paralel insert/update
+   * UPSERT BATCH: Import banyak baris sekaligus
+   * mode: 'upsert' = tambah+update, 'insert_only' = hanya data baru saja
    */
-  async upsertBatch(tools) {
+  async upsertBatch(tools, mode = 'upsert') {
     const noIds = tools.map(t => t.no_id).filter(Boolean)
 
-    // Satu query untuk ambil semua no_id yang sudah ada
+    // Ambil semua data existing sekaligus untuk diff comparison
     const { data: existingRows } = await supabase
       .from('daftaralat')
-      .select('no, no_id')
+      .select('no, no_id, description, type_model, sn, year, product, process, safety, environment, pm_yn, "6_monthly", yearly, internal_external, y_n, schedule, location, area')
       .in('no_id', noIds)
 
     const existingMap = {}
-    ;(existingRows || []).forEach(r => { existingMap[r.no_id] = r.no })
+    ;(existingRows || []).forEach(r => { existingMap[r.no_id] = r })
 
-    // Pisahkan mana yang update vs insert
-    const toUpdate = tools.filter(t => existingMap[t.no_id])
+    // Pisahkan berdasarkan mode
     const toInsert = tools.filter(t => !existingMap[t.no_id])
+    const toUpdate = mode === 'insert_only'
+      ? [] // mode insert_only: skip semua yang sudah ada
+      : tools.filter(t => {
+          if (!existingMap[t.no_id]) return false
+          // Diff check: hanya update jika ada field yang berubah
+          const ex = existingMap[t.no_id]
+          return (
+            (t.description || '') !== (ex.description || '') ||
+            (t.type_model || '') !== (ex.type_model || '') ||
+            (t.sn || '') !== (ex.sn || '') ||
+            (t.year || '') !== (ex.year || '') ||
+            (t.crit_product || '') !== (ex.product || '') ||
+            (t.crit_process || '') !== (ex.process || '') ||
+            (t.crit_safety || '') !== (ex.safety || '') ||
+            (t.crit_env || '') !== (ex.environment || '') ||
+            (t.pm_overall || '') !== (ex.pm_yn || '') ||
+            (t.pm_6monthly || '') !== (ex['6_monthly'] || '') ||
+            (t.pm_yearly || '') !== (ex.yearly || '') ||
+            (t.pm_internal_external || '') !== (ex.internal_external || '') ||
+            (t.calib_yesno || '') !== (ex.y_n || '') ||
+            (t.calib_schedule || '') !== (ex.schedule || '') ||
+            (t.area || '') !== (ex.area || '') ||
+            (t.location || '') !== (ex.location || '')
+          )
+        })
 
-    // Ambil MAX(no) untuk assign manual ke data baru (bypass sequence issue)
+    // Data yang tidak berubah (skip)
+    const skipped = mode === 'insert_only'
+      ? tools.filter(t => existingMap[t.no_id])
+      : tools.filter(t => existingMap[t.no_id] && !toUpdate.find(u => u.no_id === t.no_id))
+
+    // Ambil MAX(no) untuk insert baru
     let nextNo = 0
     if (toInsert.length > 0) {
       const { data: maxRow } = await supabase
@@ -113,68 +142,75 @@ export const daftarAlatApi = {
       nextNo = (maxRow?.no || 0) + 1
     }
 
-    const buildToolData = (tool) => ({
-      no_id: tool.no_id,
-      description: tool.description,
-      type_model: tool.type_model,
-      sn: tool.sn,
-      year: tool.year,
-      product: tool.product || tool.crit_product,
-      process: tool.process || tool.crit_process,
-      safety: tool.safety || tool.crit_safety,
-      environment: tool.environment || tool.crit_env,
-      pm_yn: tool.pm_yn || tool.pm_overall,
-      '6_monthly': tool['6_monthly'] || tool.pm_6monthly,
-      yearly: tool.yearly || tool.pm_yearly,
-      internal_external: tool.internal_external || tool.pm_internal_external,
-      y_n: tool.y_n || tool.calib_yesno,
-      schedule: tool.schedule || tool.calib_schedule,
-      area: tool.area || null,
-      location: tool.location,
-      status: tool.status || null
-    })
+    const buildToolData = (tool, preserveStatus = false) => {
+      const data = {
+        no_id: tool.no_id,
+        description: tool.description,
+        type_model: tool.type_model,
+        sn: tool.sn,
+        year: tool.year,
+        product: tool.crit_product || tool.product,
+        process: tool.crit_process || tool.process,
+        safety: tool.crit_safety || tool.safety,
+        environment: tool.crit_env || tool.environment,
+        pm_yn: tool.pm_overall || tool.pm_yn,
+        '6_monthly': tool.pm_6monthly || tool['6_monthly'],
+        yearly: tool.pm_yearly || tool.yearly,
+        internal_external: tool.pm_internal_external || tool.internal_external,
+        y_n: tool.calib_yesno || tool.y_n,
+        schedule: tool.calib_schedule || tool.schedule,
+        area: tool.area || null,
+        location: tool.location
+      }
+      // Hanya set status jika eksplisit ada nilainya dan bukan preserve mode
+      // preserveStatus = true saat update via import (jangan overwrite status existing)
+      if (!preserveStatus && tool.status) {
+        data.status = tool.status
+      }
+      return data
+    }
 
-    // Jalankan semua secara paralel
     const results = await Promise.allSettled([
-      // UPDATE yang sudah ada
       ...toUpdate.map(async (tool) => {
         const result = await supabase
           .from('daftaralat')
-          .update(buildToolData(tool))
-          .eq('no', existingMap[tool.no_id])
-          .select('no')
-          .single()
+          .update(buildToolData(tool, true))  // preserveStatus: jangan overwrite status existing
+          .eq('no', existingMap[tool.no_id].no)
+          .select('no').single()
         if (result.error) throw new Error(result.error.message)
         return { action: 'updated', no_id: tool.no_id }
       }),
-      // INSERT baru dengan no manual
       ...toInsert.map(async (tool, i) => {
         const result = await supabase
           .from('daftaralat')
-          .insert({ ...buildToolData(tool), no: nextNo + i })
-          .select('no')
-          .single()
+          .insert({ ...buildToolData(tool, false), no: nextNo + i })  // insert baru: status boleh di-set
+          .select('no').single()
         if (result.error) throw new Error(result.error.message)
         return { action: 'inserted', no_id: tool.no_id }
       })
     ])
 
-    // Setelah insert manual, sync sequence agar tidak konflik ke depannya
     if (toInsert.length > 0) {
-      try {
-        await supabase.rpc('reset_daftaralat_sequence')
-      } catch {
-        // Ignore jika RPC belum ada — sequence akan di-fix manual
-      }
+      try { await supabase.rpc('reset_daftaralat_sequence') } catch {}
     }
 
-    const allTools = [...toUpdate, ...toInsert]
-    return results.map((r, i) => ({
-      no_id: allTools[i].no_id,
+    const processed = [...toUpdate, ...toInsert]
+    const processedResults = results.map((r, i) => ({
+      no_id: processed[i].no_id,
       success: r.status === 'fulfilled',
       action: r.status === 'fulfilled' ? r.value.action : null,
       error: r.status === 'rejected' ? r.reason?.message : null
     }))
+
+    // Tambahkan skipped sebagai success dengan action 'skipped'
+    const skippedResults = skipped.map(t => ({
+      no_id: t.no_id,
+      success: true,
+      action: 'skipped',
+      error: null
+    }))
+
+    return [...processedResults, ...skippedResults]
   },
 
   /**

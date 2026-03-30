@@ -45,12 +45,12 @@ let dtInstance = null
 
 const initDT = async () => {
   await nextTick()
+  const table = document.querySelector('.all-aktivitas-table')
+  if (!table) return
   if (dtInstance) {
     try { dtInstance.destroy(true) } catch (e) {}
     dtInstance = null
   }
-  const table = document.querySelector('.all-aktivitas-table')
-  if (!table) return
   dtInstance = $(table).DataTable({
     paging: true,
     lengthChange: true,
@@ -83,12 +83,10 @@ let refreshTimer = null
 
 const refresh = async () => {
   pageError.value = null
-  await fetchAllLogs()
-  setBacklogFilter(backlogFilter.value) // update displayedLogs dengan data baru
-  // watch(backlogFilter) tidak terpicu karena nilai tidak berubah
-  // jadi panggil initDT manual setelah data baru masuk
-  await nextTick()
-  await initDT()
+  await fetchAllLogs(true) // silent
+  setBacklogFilter(backlogFilter.value)
+  // DataTable tidak di-reinit saat background refresh
+  // Data di tbody sudah diupdate Vue, DataTable akan reflect saat user interaksi berikutnya
 }
 
 const startAutoRefresh = () => {
@@ -195,10 +193,10 @@ watch(showFormDialog, (val) => {
   else $('#logFormModal').modal('hide')
 })
 
-// watch backlogFilter: saat filter button diklik, :key berubah → Vue recreate table → init DT
-// Gunakan flush:'post' agar berjalan setelah DOM diupdate Vue
-watch(backlogFilter, () => {
-  nextTick().then(() => initDT())
+// Saat filter berubah: Vue update tbody → destroy DataTable lama → init ulang
+watch(backlogFilter, async () => {
+  await nextTick() // tunggu Vue update tbody dengan data baru
+  await initDT()   // destroy instance lama + init di elemen yang sama
 }, { flush: 'post' })
 
 // Mount
@@ -212,14 +210,23 @@ onMounted(async () => {
     Swal.fire('Error!', error.message || 'Gagal memuat data', 'error')
   }
 
+  // Flag untuk deteksi print — skip refresh setelah print dialog tutup
+  let isPrinting = false
+  const onBeforePrint = () => { isPrinting = true }
+  const onAfterPrint = () => { setTimeout(() => { isPrinting = false }, 500) }
+  window.addEventListener('beforeprint', onBeforePrint)
+  window.addEventListener('afterprint', onAfterPrint)
+
   const onVisibilityChange = async () => {
-    if (document.visibilityState === 'visible') await refresh()
+    if (document.visibilityState === 'visible' && !isPrinting) await refresh()
   }
   document.addEventListener('visibilitychange', onVisibilityChange)
   onUnmounted(() => {
     document.removeEventListener('visibilitychange', onVisibilityChange)
+    window.removeEventListener('beforeprint', onBeforePrint)
+    window.removeEventListener('afterprint', onAfterPrint)
     stopAutoRefresh()
-    if (dtInstance) { try { dtInstance.destroy(true) } catch (e) {} dtInstance = null }
+    if (dtInstance) { try { dtInstance.destroy() } catch (e) {} dtInstance = null }
   })
 })
 </script>
@@ -346,8 +353,10 @@ onMounted(async () => {
                 </button>
               </div>
 
-              <div class="table-responsive">
-                <table :key="backlogFilter" class="table table-bordered table-hover all-aktivitas-table">
+              <!-- :key pada wrapper memaksa Vue recreate seluruh container + tabel saat filter berubah -->
+              <!-- Ini mencegah konflik antara DataTable DOM dan Vue reactive data -->
+              <div :key="backlogFilter" class="table-responsive">
+                <table class="table table-bordered table-hover all-aktivitas-table">
                   <thead>
                     <tr>
                       <th class="align-middle text-center checkbox-column" :style="bulkDeleteMode ? '' : 'width:0!important;min-width:0!important;max-width:0!important;padding:0!important;'">

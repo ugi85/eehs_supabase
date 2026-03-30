@@ -15,6 +15,7 @@ const {
   importErrors,
   importPreview,
   showPreview,
+  importMode,
   downloadDaftarAlatTemplate,
   exportDaftarAlat,
   parseImportFile,
@@ -27,6 +28,7 @@ const importFileRef = ref(null)
 
 const openImportModal = () => {
   resetImport()
+  importMode.value = 'upsert'
   showImportModal.value = true
 }
 
@@ -47,17 +49,23 @@ const confirmImport = async () => {
   importing.value = true
 
   try {
-    const results = await daftarAlatApi.upsertBatch(importPreview.value)
+    const results = await daftarAlatApi.upsertBatch(importPreview.value, importMode.value)
     const inserted = results.filter(r => r.success && r.action === 'inserted').length
     const updated = results.filter(r => r.success && r.action === 'updated').length
+    const skipped = results.filter(r => r.success && r.action === 'skipped').length
     const failed = results.filter(r => !r.success)
 
     closeImportModal()
-    await fetchList(true)
+    await fetchList(true) // loading = true → Vue render spinner → loading = false → Vue render tabel → initDataTable
     await nextTick()
     await initDataTable()
 
-    const msg = `${inserted} data baru ditambahkan, ${updated} data diperbarui.`
+    const parts = []
+    if (inserted) parts.push(`${inserted} data baru ditambahkan`)
+    if (updated) parts.push(`${updated} data diperbarui`)
+    if (skipped) parts.push(`${skipped} data tidak berubah (dilewati)`)
+    const msg = parts.join(', ') + '.'
+
     if (failed.length) {
       const errList = failed.slice(0, 5).map(f => `${f.no_id}: ${f.error}`).join('\n')
       Swal.fire('Import Selesai', `${msg}\n\nGagal (${failed.length}):\n${errList}`, 'warning')
@@ -522,6 +530,25 @@ onMounted(async () => {
               </a>
             </div>
 
+            <!-- Mode Import -->
+            <div class="form-group">
+              <label class="font-weight-bold">Mode Import</label>
+              <div class="d-flex">
+                <div class="custom-control custom-radio mr-4">
+                  <input type="radio" id="mode-upsert" class="custom-control-input" value="upsert" v-model="importMode" />
+                  <label class="custom-control-label" for="mode-upsert">
+                    Tambah + Update <small class="text-muted">(data baru ditambah, data berubah diupdate, data sama dilewati)</small>
+                  </label>
+                </div>
+                <div class="custom-control custom-radio">
+                  <input type="radio" id="mode-insert" class="custom-control-input" value="insert_only" v-model="importMode" />
+                  <label class="custom-control-label" for="mode-insert">
+                    Hanya Data Baru <small class="text-muted">(data yang sudah ada tidak disentuh)</small>
+                  </label>
+                </div>
+              </div>
+            </div>
+
             <div class="form-group">
               <label>Pilih File Excel</label>
               <input
@@ -644,10 +671,28 @@ onMounted(async () => {
                 </div>
                 <div v-if="isEditMode" class="form-group">
                   <label>Status Alat</label>
-                  <select v-model="editingTool.status" class="form-control">
-                    <option value="active">Aktif</option>
-                    <option value="obsolete">Obsolete</option>
+                  <select
+                    v-model="editingTool.status"
+                    class="form-control font-weight-bold"
+                    :class="{
+                      'border-success text-success': editingTool.status === 'active',
+                      'border-secondary text-secondary': editingTool.status === 'obsolete'
+                    }"
+                    :style="editingTool.status === 'active'
+                      ? 'background-color:#f0fff4; border-width:2px;'
+                      : 'background-color:#f5f5f5; border-width:2px;'"
+                  >
+                    <option value="active" style="color:#28a745; font-weight:600;">✓ Aktif</option>
+                    <option value="obsolete" style="color:#6c757d; font-weight:600;">✕ Obsolete</option>
                   </select>
+                  <small class="mt-1 d-block">
+                    <span v-if="editingTool.status === 'active'" class="text-success">
+                      <i class="fas fa-check-circle mr-1"></i>Alat aktif dan dapat digunakan
+                    </span>
+                    <span v-else class="text-secondary">
+                      <i class="fas fa-ban mr-1"></i>Alat tidak aktif / sudah tidak digunakan
+                    </span>
+                  </small>
                 </div>
               </div>
             </div>

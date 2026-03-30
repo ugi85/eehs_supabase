@@ -45,8 +45,8 @@ export function useDaftarAlat() {
   }
 
   // === Fetch dengan cache 1 menit ===
-  const fetchList = async (force = false) => {
-    loading.value = true
+  const fetchList = async (force = false, silent = false) => {
+    if (!silent) loading.value = true
     const now = Date.now()
     const cacheKey = `${CACHE_KEY}_${statusFilter.value}`
 
@@ -79,16 +79,16 @@ export function useDaftarAlat() {
   // === Ganti filter dan reload ===
   const setStatusFilter = async (filter) => {
     statusFilter.value = filter
-    await fetchList(true)
+    await fetchList(true) // filter change = show loading
     await initDataTable()
   }
 
-  // === Auto-refresh setiap 1 menit ===
+  // === Auto-refresh setiap 1 menit (silent — tidak tampilkan loading) ===
   const startAutoRefresh = () => {
     stopAutoRefresh()
     refreshTimer = setInterval(async () => {
       localStorage.removeItem(`${CACHE_KEY}_${statusFilter.value}`)
-      await fetchList(true)
+      await fetchList(true, true) // silent = true
       await initDataTable()
     }, CACHE_DURATION)
   }

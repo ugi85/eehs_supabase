@@ -64,36 +64,20 @@ export function usePermissions() {
    * PUBLIC bisa akses view permissions, LOGIN bisa akses semua sesuai role
    */
   const can = (permission) => {
-    // Jika TIDAK login, cek apakah ini public permission (view only)
     if (!userStore.state.user) {
-      const isPublicPermission = PUBLIC_PERMISSIONS.includes(permission)
-      console.log('[usePermissions] can("' + permission + '") - PUBLIC:', isPublicPermission)
-      return isPublicPermission
+      return PUBLIC_PERMISSIONS.includes(permission)
     }
 
-    // Jika LOGIN dan ada custom permissions, gunakan itu
     if (userStore.state.permissions && userStore.state.permissions.length > 0) {
-      const hasPermission = userStore.state.permissions.includes(permission)
-      console.log('[usePermissions] can("' + permission + '") - CUSTOM:', hasPermission)
-      return hasPermission
+      return userStore.state.permissions.includes(permission)
     }
 
-    // Jika LOGIN tapi tidak ada custom permissions, gunakan role-based
     const userRole = userStore.state.user.role
-    
-    // Cek role hierarchy - jika role lebih tinggi, otomatis dapat permission
     const allowedRoles = ROLE_HIERARCHY[userRole] || [userRole]
-    
-    // Cek di DEFAULT_ROLE_PERMISSIONS untuk setiap role yang diizinkan
     for (const role of allowedRoles) {
       const rolePermissions = DEFAULT_ROLE_PERMISSIONS[role] || []
-      if (rolePermissions.includes(permission)) {
-        console.log('[usePermissions] can("' + permission + '") - ROLE (' + userRole + ' → ' + role + '): true')
-        return true
-      }
+      if (rolePermissions.includes(permission)) return true
     }
-    
-    console.log('[usePermissions] can("' + permission + '") - ROLE (' + userRole + '): false')
     return false
   }
 
