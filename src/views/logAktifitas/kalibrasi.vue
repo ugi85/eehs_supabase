@@ -389,7 +389,7 @@ onMounted(async () => {
     <section class="content">
       <div class="container-fluid">
         <!-- print-only big header -->
-        <div class="print-header d-none">
+        <!-- <div class="print-header d-none">
           <div class="company-logo">AGIS</div>
           <div class="company-name">PT. AGIS INSTRUMENT SERVICES</div>
           <div class="company-address">Jl. Raya Industri No. 123, Kawasan Industri MM2100</div>
@@ -400,7 +400,7 @@ onMounted(async () => {
           <div class="report-period">
             Periode: {{ selectedMonth }} {{ selectedYear }}
           </div>
-        </div>
+        </div> -->
         <div class="card">
           <div class="card-body">
             <div v-if="!dataLoaded" class="text-center py-5">

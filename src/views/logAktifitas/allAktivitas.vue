@@ -293,7 +293,7 @@ onMounted(async () => {
     <section class="content">
       <div class="container-fluid">
         <!-- print header -->
-        <div class="print-header d-none">
+        <!-- <div class="print-header d-none">
           <div class="company-logo">AGIS</div>
           <div class="company-name">PT. AGIS INSTRUMENT SERVICES</div>
           <div class="company-address">Jl. Raya Industri No. 123, Kawasan Industri MM2100</div>
@@ -303,7 +303,7 @@ onMounted(async () => {
           <div class="report-period">
             Dicetak pada: {{ printDate }}
           </div>
-        </div>
+        </div> -->
         <div class="card">
           <!-- <div class="card-header bg-primary">
             <h3 class="card-title text-white">

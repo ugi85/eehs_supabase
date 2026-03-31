@@ -348,7 +348,7 @@ export const logAktivitasApi = {
         throw kalibrasiError
       }
 
-      // Ambil status alat untuk indikator obsolete (tidak difilter, hanya ditandai)
+      // Ambil status alat
       const { data: alatStatusData } = await supabase
         .from('daftaralat')
         .select('no_id, status')
@@ -356,9 +356,17 @@ export const logAktivitasApi = {
       const alatStatusMap = {}
       ;(alatStatusData || []).forEach(d => { alatStatusMap[d.no_id] = d.status })
 
-      // Filter by month only — obsolete tetap ditampilkan
+      // Tentukan apakah periode ini sudah lewat
+      const now = new Date()
+      const selectedDate = new Date(parseInt(year), monthIndex + 1, 0) // akhir bulan yang dipilih
+      const isPastPeriod = selectedDate < new Date(now.getFullYear(), now.getMonth(), 1)
+
+      // Filter by month:
+      // - Periode lampau: tampilkan semua (termasuk obsolete) agar history tetap ada
+      // - Periode sekarang/mendatang: skip alat obsolete
       const monthShort = month.substring(0, 3).toLowerCase()
       const filtered = (kalibrasiData || []).filter(item => {
+        if (!isPastPeriod && alatStatusMap[item.no_id] === 'obsolete') return false
         if (!item.due_date) return false
         return item.due_date.toLowerCase().includes(monthShort)
       })
@@ -467,7 +475,7 @@ export const logAktivitasApi = {
       const monthIndex = months.indexOf(month)
       const monthNum = String(monthIndex + 1).padStart(2, '0')
 
-      // Get PM schedules for this month
+      // Get PM schedules for this month — exclude obsolete hanya untuk periode sekarang/mendatang
       const { data: alatData, error: alatError } = await supabase
         .from('daftaralat')
         .select('*')
@@ -478,20 +486,17 @@ export const logAktivitasApi = {
         throw alatError
       }
 
-      // Debug: Log all PM items with their schedule and interval fields
-      alatData?.forEach(item => {
-        console.log({
-          no_id: item.no_id,
-          schedule: item.schedule,
-          '6_monthly': item['6_monthly'],
-          yearly: item.yearly,
-          pm_yn: item.pm_yn
-        })
-      })
+      // Tentukan apakah periode ini sudah lewat
+      const now = new Date()
+      const selectedDate = new Date(parseInt(year), monthIndex + 1, 0)
+      const isPastPeriod = selectedDate < new Date(now.getFullYear(), now.getMonth(), 1)
 
       // Filter by month - check schedule, 6_monthly, and yearly fields
+      // Periode lampau: tampilkan semua termasuk obsolete (history)
+      // Periode sekarang/mendatang: skip obsolete
       const monthShort = month.substring(0, 3).toLowerCase()
       const filtered = (alatData || []).filter(item => {
+        if (!isPastPeriod && item.status === 'obsolete') return false
         // Check schedule field (main field)
         if (item.schedule) {
           const scheduleLower = item.schedule.toLowerCase()
