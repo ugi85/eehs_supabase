@@ -18,6 +18,10 @@ ADD COLUMN IF NOT EXISTS backlog_updated_at TIMESTAMPTZ DEFAULT NULL;
 ALTER TABLE logaktivitas
 ADD COLUMN IF NOT EXISTS backlog_updated_by VARCHAR(100) DEFAULT NULL;
 
+-- 4. Tambah kolom history backlog (JSONB array untuk audit trail lengkap)
+ALTER TABLE logaktivitas
+ADD COLUMN IF NOT EXISTS backlog_history JSONB DEFAULT '[]'::jsonb;
+
 -- 4. Index untuk query performa
 CREATE INDEX IF NOT EXISTS idx_logaktivitas_backlog_status 
 ON logaktivitas(backlog_status) 

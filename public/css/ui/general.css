@@ -1,43 +1,104 @@
+/* ============================================================
+   EEHS System — Global UI Styles
+   Responsive fixes untuk semua halaman
+   ============================================================ */
 
-    .color-palette {
-      height: 35px;
-      line-height: 35px;
-      text-align: right;
-      padding-right: .75rem;
-    }
+/* ── Content Header Responsive ─────────────────────────────── */
+.content-header .page-title {
+  font-size: 1.4rem;
+  font-weight: 600;
+  margin-bottom: 0;
+  line-height: 1.2;
+}
 
-    .color-palette.disabled {
-      text-align: center;
-      padding-right: 0;
-      display: block;
-    }
+.content-header .page-subtitle {
+  font-size: 0.8rem;
+  color: #6c757d;
+}
 
-    .color-palette-set {
-      margin-bottom: 15px;
-    }
+/* Header action area — wrap di mobile */
+.header-actions {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  justify-content: flex-end;
+}
 
-    .color-palette span {
-      display: none;
-      font-size: 12px;
-    }
+/* Filter group di mobile */
+@media (max-width: 767px) {
+  .content-header {
+    padding: 0.75rem 0.75rem 0.5rem;
+  }
 
-    .color-palette:hover span {
-      display: block;
-    }
+  .content-header .page-title {
+    font-size: 1.1rem;
+  }
 
-    .color-palette.disabled span {
-      display: block;
-      text-align: left;
-      padding-left: .75rem;
-    }
+  /* Stack header jadi 2 baris di mobile */
+  .content-header .header-row {
+    flex-direction: column;
+    align-items: flex-start !important;
+    gap: 0.5rem;
+  }
 
-    .color-palette-box h4 {
-      position: absolute;
-      left: 1.25rem;
-      margin-top: .75rem;
-      color: rgba(255, 255, 255, 0.8);
-      font-size: 12px;
-      display: block;
-      z-index: 7;
-    }
-  
+  .header-actions {
+    width: 100%;
+    justify-content: flex-start;
+  }
+
+  /* Btn group filter — scroll horizontal jika tidak muat */
+  .header-actions .btn-group {
+    flex-wrap: nowrap;
+    overflow-x: auto;
+    max-width: 100%;
+  }
+
+  .header-actions .btn-group .btn {
+    font-size: 0.72rem;
+    padding: 0.2rem 0.45rem;
+    white-space: nowrap;
+  }
+
+  /* Sembunyikan label teks panjang di mobile, tampilkan hanya ikon */
+  .btn-label-mobile {
+    display: none;
+  }
+
+  /* Tabel — font lebih kecil */
+  .table th,
+  .table td {
+    font-size: 0.78rem;
+    padding: 0.35rem 0.4rem;
+  }
+
+  /* DataTables controls */
+  .dataTables_wrapper .dataTables_length,
+  .dataTables_wrapper .dataTables_filter {
+    font-size: 0.8rem;
+  }
+
+  .dataTables_wrapper .dataTables_paginate .paginate_button {
+    padding: 0.2rem 0.4rem !important;
+    font-size: 0.78rem;
+  }
+}
+
+@media (min-width: 768px) {
+  .btn-label-mobile {
+    display: inline;
+  }
+}
+
+/* ── Badge counter ──────────────────────────────────────────── */
+.badge-counter {
+  font-size: 0.8rem;
+  padding: 0.35em 0.65em;
+}
+
+/* ── Card body padding mobile ───────────────────────────────── */
+@media (max-width: 575px) {
+  .card-body {
+    padding: 0.75rem;
+  }
+}

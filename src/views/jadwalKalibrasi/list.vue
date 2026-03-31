@@ -378,30 +378,32 @@ onMounted(async () => {
 
 <template>
   <div class="content-wrapper">
-    <!-- ✅ Header dengan tombol Tambah -->
+    <!-- Header dengan tombol Tambah -->
     <section class="content-header">
-      <div class="container-fluid d-flex justify-content-between align-items-start">
-        <div>
-          <h1 class="mb-0">Jadwal Kalibrasi</h1>
-          <!-- <small class="text-muted">No Reff: AGIS-WI-ENG-016-LD1_v5.0</small><br> -->
-           <small class="text-muted">No Reff: {{ documentRefCalibration }}</small>
+      <div class="container-fluid">
+        <!-- Baris 1: Judul + Tambah -->
+        <div class="d-flex justify-content-between align-items-center mb-2 header-row">
+          <div>
+            <h1 class="page-title mb-0">Jadwal Kalibrasi</h1>
+            <small class="page-subtitle">No Reff: {{ documentRefCalibration }}</small>
+          </div>
+          <button v-if="canCreate" class="btn btn-info btn-sm" @click="openCreateModal">
+            <i class="fas fa-plus mr-1"></i><span class="btn-label-mobile"> Tambah Jadwal</span>
+          </button>
         </div>
-        <div class="d-flex align-items-center">
-          <!-- Export / Import — hanya admin -->
-          <div v-if="isAdmin" class="btn-group mr-2">
-            <button class="btn btn-sm btn-outline-success" @click="exportJadwalKalibrasi(refJadwal)" title="Export ke Excel">
-              <i class="fas fa-file-excel mr-1"></i>Export
+        <!-- Baris 2: Export/Import -->
+        <div class="header-actions" v-if="isAdmin">
+          <div class="btn-group btn-group-sm">
+            <button class="btn btn-outline-success" @click="exportJadwalKalibrasi(refJadwal)" title="Export ke Excel">
+              <i class="fas fa-file-excel"></i><span class="btn-label-mobile ml-1">Export</span>
             </button>
-            <button class="btn btn-sm btn-outline-secondary" @click="downloadJadwalKalibrasiTemplate" title="Download template Excel">
-              <i class="fas fa-download mr-1"></i>Template
+            <button class="btn btn-outline-secondary" @click="downloadJadwalKalibrasiTemplate" title="Download template">
+              <i class="fas fa-download"></i><span class="btn-label-mobile ml-1">Template</span>
             </button>
-            <button class="btn btn-sm btn-outline-primary" @click="openImportModal" title="Import dari Excel">
-              <i class="fas fa-file-upload mr-1"></i>Import
+            <button class="btn btn-outline-primary" @click="openImportModal" title="Import dari Excel">
+              <i class="fas fa-file-upload"></i><span class="btn-label-mobile ml-1">Import</span>
             </button>
           </div>
-          <button v-if="canCreate" class="btn btn-info" @click="openCreateModal">
-            <i class="fas fa-plus mr-1"></i> Tambah Jadwal
-          </button>
         </div>
       </div>
     </section>

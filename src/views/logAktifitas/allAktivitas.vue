@@ -1,6 +1,7 @@
 <script setup>
 import { ref, onMounted, onUnmounted, watch, computed, nextTick } from 'vue'
 import { useLogAktivitas } from '@/composables/useLogAktivitas'
+import { logAktivitasApi } from '@/api'
 import { printService } from '@/services/printService'
 import { usePermissions } from '@/composables/usePermissions'
 
@@ -154,6 +155,44 @@ const openEditDialog = (log) => {
   $('#logFormModal').modal('show')
 }
 
+// ── Backlog modal (terpisah dari edit) ────────────────────────────────────
+const backlogModal = ref({ row: null, status: null, notes: '' })
+const savingBacklog = ref(false)
+
+const openBacklogModal = (log) => {
+  backlogModal.value = {
+    row: log,
+    status: log.backlog_status || null,
+    notes: log.backlog_notes || ''
+  }
+  $('#allAktivitasBacklogModal').modal('show')
+}
+
+const saveBacklog = async () => {
+  if (!backlogModal.value.row?.no) return
+  savingBacklog.value = true
+  try {
+    const updatedBy = permission.user.value?.inisial || permission.user.value?.nama || permission.user.value?.email || null
+    const result = await logAktivitasApi.updateBacklog(
+      backlogModal.value.row.no,
+      backlogModal.value.status,
+      backlogModal.value.notes,
+      updatedBy
+    )
+    backlogModal.value.row.backlog_status = backlogModal.value.status
+    backlogModal.value.row.backlog_notes = backlogModal.value.notes
+    backlogModal.value.row.backlog_updated_at = new Date().toISOString()
+    backlogModal.value.row.backlog_updated_by = updatedBy
+    if (result?.data?.backlog_history) backlogModal.value.row.backlog_history = result.data.backlog_history
+    $('#allAktivitasBacklogModal').modal('hide')
+    Swal.fire({ icon: 'success', title: 'Berhasil!', text: 'Backlog berhasil disimpan', timer: 1200, showConfirmButton: false })
+  } catch (error) {
+    Swal.fire({ icon: 'error', title: 'Gagal!', text: error.message || 'Gagal menyimpan backlog' })
+  } finally {
+    savingBacklog.value = false
+  }
+}
+
 const handleCloseModal = () => {
   closeFormDialog()
   $('#logFormModal').modal('hide')
@@ -235,14 +274,32 @@ onMounted(async () => {
   <div class="content-wrapper">
     <!-- Header -->
     <section class="content-header">
-      <div class="container-fluid d-flex justify-content-between align-items-start">
-        <div>
-          <h1 class="mb-0">Semua Log Aktivitas</h1>
-          <small class="text-muted">Menampilkan semua aktivitas Kalibrasi dan PM yang pernah dilaksanakan</small>
+      <div class="container-fluid">
+        <!-- Baris 1: Judul -->
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <div>
+            <h1 class="mb-0" style="font-size: 1.3rem;">Semua Log Aktivitas</h1>
+            <small class="text-muted d-none d-md-block">Menampilkan semua aktivitas Kalibrasi dan PM yang pernah dilaksanakan</small>
+          </div>
+          <!-- Print + counter — kanan atas -->
+          <div class="d-flex align-items-center no-print">
+            <span class="badge badge-info mr-2">
+              <i class="fas fa-database mr-1"></i>
+              {{ displayedLogs.length }}{{ backlogFilter !== 'all' ? ' / ' + allActivityLogs.length : '' }}
+            </span>
+            <button
+              class="btn btn-secondary btn-sm"
+              :disabled="loading || allActivityLogs.length===0"
+              @click="handlePrint"
+              title="Cetak semua log aktivitas"
+            >
+              <i class="fas fa-print mr-1"></i><span class="d-none d-sm-inline">Print</span>
+            </button>
+          </div>
         </div>
-        <div class="d-flex align-items-center no-print">
-          <!-- Filter Backlog -->
-          <div class="btn-group btn-group-sm mr-3" role="group">
+        <!-- Baris 2: Filter buttons — full width di mobile -->
+        <div class="no-print">
+          <div class="btn-group btn-group-sm w-100" role="group" style="flex-wrap: wrap;">
             <button
               type="button"
               class="btn"
@@ -274,18 +331,6 @@ onMounted(async () => {
               @click="setBacklogFilter('none')"
             >Tanpa Backlog</button>
           </div>
-          <span class="badge badge-info mr-3">
-            <i class="fas fa-database mr-1"></i>
-            {{ displayedLogs.length }}{{ backlogFilter !== 'all' ? ' / ' + allActivityLogs.length : '' }}
-          </span>
-          <button
-            class="btn btn-secondary btn-sm mr-2"
-            :disabled="loading || allActivityLogs.length===0"
-            @click="handlePrint"
-            title="Cetak semua log aktivitas"
-          >
-            <i class="fas fa-print mr-1"></i>Print
-          </button>
         </div>
       </div>
     </section>
@@ -422,7 +467,6 @@ onMounted(async () => {
                         </span>
                       </td>
                        <td class="text-center">
-                        <!-- ✅ BUTTON EDIT & DELETE - HANYA UNTUK YANG LOGIN -->
                         <button
                           v-if="isLoggedIn && canEdit"
                           class="btn btn-warning btn-sm mr-1"
@@ -430,6 +474,15 @@ onMounted(async () => {
                           title="Edit Log"
                         >
                           <i class="fas fa-edit"></i>
+                        </button>
+                        <!-- Tombol Backlog — tampil untuk semua, warna sesuai status -->
+                        <button
+                          class="btn btn-sm mr-1"
+                          :class="log.backlog_status === 'pending' ? 'btn-warning' : log.backlog_status === 'completed' ? 'btn-success' : 'btn-outline-secondary'"
+                          @click="openBacklogModal(log)"
+                          title="Lihat/Kelola Backlog"
+                        >
+                          <i class="fas fa-clipboard-list"></i>
                         </button>
                         <button
                           v-if="isLoggedIn && canDelete"
@@ -439,7 +492,6 @@ onMounted(async () => {
                         >
                           <i class="fas fa-trash"></i>
                         </button>
-                        <!-- ✅ PESAN UNTUK TAMU -->
                         <span v-if="!isLoggedIn" class="text-muted small">
                           <i class="fas fa-lock mr-1"></i>
                         </span>
@@ -550,38 +602,6 @@ onMounted(async () => {
                 required
               ></textarea>
             </div>
-
-            <!-- Backlog Section -->
-            <hr class="my-3">
-            <div class="d-flex align-items-center mb-2">
-              <strong class="mr-2">Backlog / Follow-up</strong>
-              <span v-if="formData.backlog_status === 'pending'" class="badge badge-warning">Pending</span>
-              <span v-else-if="formData.backlog_status === 'completed'" class="badge badge-success">Completed</span>
-              <span v-else class="badge badge-light text-muted">Tidak ada</span>
-            </div>
-            <!-- Audit trail -->
-            <div v-if="currentLog?.backlog_updated_at" class="alert alert-light py-1 px-2 mb-2 small">
-              <i class="fas fa-history mr-1 text-muted"></i>
-              Terakhir diubah: <strong>{{ formatAuditTime(currentLog.backlog_updated_at) }}</strong>
-              <span v-if="currentLog.backlog_updated_by"> oleh <strong>{{ currentLog.backlog_updated_by }}</strong></span>
-            </div>
-            <div class="form-group">
-              <label>Status Backlog</label>
-              <select v-model="formData.backlog_status" class="form-control">
-                <option :value="null">— Tidak ada backlog —</option>
-                <option value="pending">Pending (masih ada yang perlu ditindaklanjuti)</option>
-                <option value="completed">Completed (follow-up sudah selesai)</option>
-              </select>
-            </div>
-            <div v-if="formData.backlog_status" class="form-group">
-              <label>Catatan Backlog</label>
-              <textarea
-                v-model="formData.backlog_notes"
-                class="form-control"
-                rows="2"
-                placeholder="Contoh: Menunggu part bearing dari supplier, ETA 2 minggu"
-              ></textarea>
-            </div>
           </div>
           <div class="modal-footer">
             <button 
@@ -614,6 +634,82 @@ onMounted(async () => {
     </div>
 
   </div>
+
+  <!-- Modal Backlog Terpisah -->
+  <div class="modal fade" id="allAktivitasBacklogModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-sm">
+      <div class="modal-content">
+        <div class="modal-header">
+          <h5 class="modal-title"><i class="fas fa-clipboard-list mr-2"></i>Backlog / Follow-up</h5>
+          <button type="button" class="close" data-dismiss="modal"><span>&times;</span></button>
+        </div>
+        <div class="modal-body">
+          <p class="text-muted small mb-2">
+            <strong>{{ backlogModal.row?.no_id }}</strong>
+            <span v-if="backlogModal.row?.cal_id"> — {{ backlogModal.row.cal_id }}</span>
+          </p>
+          <!-- Audit trail -->
+          <div v-if="backlogModal.row?.backlog_updated_at" class="alert alert-light py-1 px-2 mb-2 small">
+            <i class="fas fa-history mr-1 text-muted"></i>
+            Terakhir diubah: <strong>{{ formatAuditTime(backlogModal.row.backlog_updated_at) }}</strong>
+            <span v-if="backlogModal.row.backlog_updated_by"> oleh <strong>{{ backlogModal.row.backlog_updated_by }}</strong></span>
+          </div>
+          <!-- Riwayat perubahan -->
+          <div v-if="backlogModal.row?.backlog_history?.length" class="mb-3">
+            <small class="text-muted font-weight-bold d-block mb-1">Riwayat Perubahan:</small>
+            <div
+              v-for="(h, i) in [...(backlogModal.row.backlog_history || [])].reverse()"
+              :key="i"
+              class="border-left pl-2 mb-1 small"
+              :style="h.status === 'pending' ? 'border-color: #ffc107 !important' : 'border-color: #28a745 !important'"
+            >
+              <span :class="h.status === 'pending' ? 'text-warning' : 'text-success'" class="font-weight-bold">
+                {{ h.status === 'pending' ? 'Pending' : 'Completed' }}
+              </span>
+              <span class="text-muted ml-1">— {{ formatAuditTime(h.changed_at) }} oleh {{ h.changed_by }}</span>
+              <div v-if="h.notes" class="text-muted font-italic">{{ h.notes }}</div>
+            </div>
+          </div>
+          <!-- Form — hanya tampil jika login -->
+          <div v-if="isLoggedIn">
+            <div class="form-group">
+              <label>Status Backlog</label>
+              <select v-model="backlogModal.status" class="form-control form-control-sm">
+                <option :value="null">— Tidak ada backlog —</option>
+                <option value="pending">Pending (perlu ditindaklanjuti)</option>
+                <option value="completed">Completed (sudah selesai)</option>
+              </select>
+            </div>
+            <div v-if="backlogModal.status" class="form-group">
+              <label>Catatan</label>
+              <textarea v-model="backlogModal.notes" class="form-control form-control-sm" rows="3"
+                placeholder="Contoh: Menunggu part dari supplier, ETA 2 minggu"></textarea>
+            </div>
+          </div>
+          <!-- View-only jika tidak login -->
+          <div v-else-if="backlogModal.row?.backlog_status" class="alert alert-light py-2 px-3 small">
+            <strong>Status saat ini:</strong>
+            <span :class="backlogModal.row.backlog_status === 'pending' ? 'text-warning' : 'text-success'" class="ml-1 font-weight-bold">
+              {{ backlogModal.row.backlog_status === 'pending' ? 'Pending' : 'Completed' }}
+            </span>
+            <div v-if="backlogModal.row.backlog_notes" class="mt-1 text-muted font-italic">{{ backlogModal.row.backlog_notes }}</div>
+          </div>
+        </div>
+        <div class="modal-footer" v-if="isLoggedIn">
+          <button type="button" class="btn btn-secondary btn-sm" data-dismiss="modal" :disabled="savingBacklog">Batal</button>
+          <button type="button" class="btn btn-primary btn-sm" @click="saveBacklog" :disabled="savingBacklog">
+            <span v-if="savingBacklog"><span class="spinner-border spinner-border-sm mr-1"></span>Menyimpan...</span>
+            <span v-else><i class="fas fa-save mr-1"></i>Simpan</span>
+          </button>
+        </div>
+        <div class="modal-footer" v-else>
+          <small class="text-muted"><i class="fas fa-lock mr-1"></i>Login untuk mengelola backlog</small>
+          <button type="button" class="btn btn-secondary btn-sm ml-auto" data-dismiss="modal">Tutup</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
 </template>
 
 <style scoped>
@@ -843,26 +939,41 @@ onMounted(async () => {
 
 /* Responsive adjustments */
 @media (max-width: 768px) {
-  .table-sm th,
-  .table-sm td {
-    padding: 0.4rem;
-    font-size: 0.8rem;
+  /* Header filter buttons full width di mobile */
+  .btn-group.w-100 {
+    display: flex;
+    flex-wrap: nowrap;
+    overflow-x: auto;
   }
-  
-  .content-header .badge {
-    margin-bottom: 0.5rem;
+
+  .btn-group.w-100 .btn {
+    flex: 1 1 auto;
+    white-space: nowrap;
+    font-size: 0.75rem;
+    padding: 0.25rem 0.4rem;
   }
-  
+
+  /* Tabel lebih kecil di mobile */
+  .table th,
+  .table td {
+    padding: 0.35rem 0.4rem;
+    font-size: 0.78rem;
+  }
+
+  .content-header {
+    padding: 0.75rem 0.75rem 0.5rem;
+  }
+
   .alert {
     flex-direction: column;
     align-items: flex-start;
   }
-  
+
   .alert .d-flex {
     flex-direction: column;
     width: 100%;
   }
-  
+
   .alert .badge {
     margin-top: 0.5rem;
     margin-left: 0;
