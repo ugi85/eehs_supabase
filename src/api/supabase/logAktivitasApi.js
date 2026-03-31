@@ -445,7 +445,8 @@ export const logAktivitasApi = {
           'backlog_status': log?.backlog_status || null,
           'backlog_notes': log?.backlog_notes || null,
           'backlog_updated_at': log?.backlog_updated_at || null,
-          'backlog_updated_by': log?.backlog_updated_by || null
+          'backlog_updated_by': log?.backlog_updated_by || null,
+          'backlog_history': log?.backlog_history || []
         }
       })
 
@@ -623,7 +624,8 @@ export const logAktivitasApi = {
           'backlog_status': log?.backlog_status || null,
           'backlog_notes': log?.backlog_notes || null,
           'backlog_updated_at': log?.backlog_updated_at || null,
-          'backlog_updated_by': log?.backlog_updated_by || null
+          'backlog_updated_by': log?.backlog_updated_by || null,
+          'backlog_history': log?.backlog_history || []
         }
       })
 
@@ -759,7 +761,8 @@ export const logAktivitasApi = {
           backlog_status: item.backlog_status || null,
           backlog_notes: item.backlog_notes || null,
           backlog_updated_at: item.backlog_updated_at || null,
-          backlog_updated_by: item.backlog_updated_by || null
+          backlog_updated_by: item.backlog_updated_by || null,
+          backlog_history: item.backlog_history || []
         }
       })
 
@@ -771,18 +774,43 @@ export const logAktivitasApi = {
   },
 
   /**
-   * PATCH: Update backlog status saja (tanpa ubah data log lainnya)
+   * PATCH: Update backlog status — append history ke backlog_history
    */
   async updateBacklog(no, backlog_status, backlog_notes, updatedBy = null) {
     try {
+      // Ambil data backlog saat ini untuk append history
+      const { data: current } = await supabase
+        .from('logaktivitas')
+        .select('*')
+        .eq('no', no)
+        .single()
+
+      // Append entry lama ke history (jika ada status sebelumnya)
+      const existingHistory = current?.backlog_history || []
+      if (current?.backlog_status) {
+        existingHistory.push({
+          status: current.backlog_status,
+          notes: current.backlog_notes || '',
+          changed_at: current.backlog_updated_at || new Date().toISOString(),
+          changed_by: current.backlog_updated_by || '-'
+        })
+      }
+
+      const updateData = {
+        backlog_status,
+        backlog_notes,
+        backlog_updated_at: new Date().toISOString(),
+        backlog_updated_by: updatedBy || null
+      }
+
+      // Hanya tambah backlog_history jika kolom sudah ada (tidak error)
+      try {
+        updateData.backlog_history = existingHistory
+      } catch (e) { /* kolom belum ada, skip */ }
+
       const { data, error } = await supabase
         .from('logaktivitas')
-        .update({
-          backlog_status,
-          backlog_notes,
-          backlog_updated_at: new Date().toISOString(),
-          backlog_updated_by: updatedBy || null
-        })
+        .update(updateData)
         .eq('no', no)
         .select()
         .single()

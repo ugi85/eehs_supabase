@@ -104,6 +104,7 @@ ALTER TABLE logaktivitas ADD COLUMN IF NOT EXISTS backlog_status     varchar(20)
 ALTER TABLE logaktivitas ADD COLUMN IF NOT EXISTS backlog_notes      text          DEFAULT NULL;
 ALTER TABLE logaktivitas ADD COLUMN IF NOT EXISTS backlog_updated_at timestamptz   DEFAULT NULL;
 ALTER TABLE logaktivitas ADD COLUMN IF NOT EXISTS backlog_updated_by varchar(100)  DEFAULT NULL;
+ALTER TABLE logaktivitas ADD COLUMN IF NOT EXISTS backlog_history    jsonb         DEFAULT '[]'::jsonb;
 
 -- ============================================================
 -- DB Trigger: sync daftaralat.status saat log keterangan = 'obsolete'

@@ -35,7 +35,7 @@ const saveBacklog = async () => {
   savingBacklog.value = true
   try {
     const updatedBy = permission.user.value?.inisial || permission.user.value?.nama || permission.user.value?.email || null
-    await logAktivitasApi.updateBacklog(
+    const result = await logAktivitasApi.updateBacklog(
       backlogModal.value.row.log_no,
       backlogModal.value.status,
       backlogModal.value.notes,
@@ -45,6 +45,7 @@ const saveBacklog = async () => {
     backlogModal.value.row.backlog_notes = backlogModal.value.notes
     backlogModal.value.row.backlog_updated_at = new Date().toISOString()
     backlogModal.value.row.backlog_updated_by = updatedBy
+    if (result?.data?.backlog_history) backlogModal.value.row.backlog_history = result.data.backlog_history
     $('#backlogModalPM').modal('hide')
     Swal.fire({ icon: 'success', title: 'Berhasil!', text: 'Backlog berhasil disimpan', timer: 1200, showConfirmButton: false })
   } catch (error) {
@@ -500,11 +501,10 @@ onMounted(async () => {
                         <span v-else-if="row.status === 'Selesai'" class="d-flex align-items-center justify-content-center">
                           <i class="fas fa-check-circle fa-lg text-success mr-2"></i>
                           <button
-                            v-if="isLoggedIn"
                             class="btn btn-sm"
                             :class="row.backlog_status === 'pending' ? 'btn-warning' : row.backlog_status === 'completed' ? 'btn-success' : 'btn-outline-secondary'"
                             @click="openBacklogModal(row)"
-                            title="Kelola Backlog"
+                            title="Lihat/Kelola Backlog"
                           >
                             <i class="fas fa-clipboard-list"></i>
                           </button>
@@ -559,26 +559,57 @@ onMounted(async () => {
             Terakhir diubah: <strong>{{ formatAuditTime(backlogModal.row.backlog_updated_at) }}</strong>
             <span v-if="backlogModal.row.backlog_updated_by"> oleh <strong>{{ backlogModal.row.backlog_updated_by }}</strong></span>
           </div>
-          <div class="form-group">
-            <label>Status Backlog</label>
-            <select v-model="backlogModal.status" class="form-control form-control-sm">
-              <option :value="null">— Tidak ada backlog —</option>
-              <option value="pending">Pending (perlu ditindaklanjuti)</option>
-              <option value="completed">Completed (sudah selesai)</option>
-            </select>
+          <!-- History perubahan backlog -->
+          <div v-if="backlogModal.row?.backlog_history?.length" class="mb-3">
+            <small class="text-muted font-weight-bold d-block mb-1">Riwayat Perubahan:</small>
+            <div
+              v-for="(h, i) in [...(backlogModal.row.backlog_history || [])].reverse()"
+              :key="i"
+              class="border-left pl-2 mb-1 small"
+              :style="h.status === 'pending' ? 'border-color: #ffc107 !important' : 'border-color: #28a745 !important'"
+            >
+              <span :class="h.status === 'pending' ? 'text-warning' : 'text-success'" class="font-weight-bold">
+                {{ h.status === 'pending' ? 'Pending' : 'Completed' }}
+              </span>
+              <span class="text-muted ml-1">— {{ formatAuditTime(h.changed_at) }} oleh {{ h.changed_by }}</span>
+              <div v-if="h.notes" class="text-muted font-italic">{{ h.notes }}</div>
+            </div>
           </div>
-          <div v-if="backlogModal.status" class="form-group">
-            <label>Catatan</label>
-            <textarea v-model="backlogModal.notes" class="form-control form-control-sm" rows="3"
-              placeholder="Contoh: Menunggu part bearing dari supplier, ETA 2 minggu"></textarea>
+          <!-- Form — hanya tampil jika login -->
+          <div v-if="isLoggedIn">
+            <div class="form-group">
+              <label>Status Backlog</label>
+              <select v-model="backlogModal.status" class="form-control form-control-sm">
+                <option :value="null">— Tidak ada backlog —</option>
+                <option value="pending">Pending (perlu ditindaklanjuti)</option>
+                <option value="completed">Completed (sudah selesai)</option>
+              </select>
+            </div>
+            <div v-if="backlogModal.status" class="form-group">
+              <label>Catatan</label>
+              <textarea v-model="backlogModal.notes" class="form-control form-control-sm" rows="3"
+                placeholder="Contoh: Menunggu part bearing dari supplier, ETA 2 minggu"></textarea>
+            </div>
+          </div>
+          <!-- View-only jika tidak login -->
+          <div v-else-if="backlogModal.row?.backlog_status" class="alert alert-light py-2 px-3 small">
+            <strong>Status saat ini:</strong>
+            <span :class="backlogModal.row.backlog_status === 'pending' ? 'text-warning' : 'text-success'" class="ml-1 font-weight-bold">
+              {{ backlogModal.row.backlog_status === 'pending' ? 'Pending' : 'Completed' }}
+            </span>
+            <div v-if="backlogModal.row.backlog_notes" class="mt-1 text-muted font-italic">{{ backlogModal.row.backlog_notes }}</div>
           </div>
         </div>
-        <div class="modal-footer">
+        <div class="modal-footer" v-if="isLoggedIn">
           <button type="button" class="btn btn-secondary btn-sm" data-dismiss="modal" :disabled="savingBacklog">Batal</button>
           <button type="button" class="btn btn-primary btn-sm" @click="saveBacklog" :disabled="savingBacklog">
             <span v-if="savingBacklog"><span class="spinner-border spinner-border-sm mr-1"></span>Menyimpan...</span>
             <span v-else><i class="fas fa-save mr-1"></i>Simpan</span>
           </button>
+        </div>
+        <div class="modal-footer" v-else>
+          <small class="text-muted"><i class="fas fa-lock mr-1"></i>Login untuk mengelola backlog</small>
+          <button type="button" class="btn btn-secondary btn-sm ml-auto" data-dismiss="modal">Tutup</button>
         </div>
       </div>
     </div>
