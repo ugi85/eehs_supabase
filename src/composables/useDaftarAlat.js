@@ -83,13 +83,12 @@ export function useDaftarAlat() {
     await initDataTable()
   }
 
-  // === Auto-refresh setiap 1 menit (silent — tidak tampilkan loading) ===
+  // === Auto-refresh setiap 1 menit (silent — tidak tampilkan loading, tidak reinit DataTable) ===
   const startAutoRefresh = () => {
     stopAutoRefresh()
     refreshTimer = setInterval(async () => {
       localStorage.removeItem(`${CACHE_KEY}_${statusFilter.value}`)
-      await fetchList(true, true) // silent = true
-      await initDataTable()
+      await fetchList(true, true) // silent — data update di background, DataTable tetap
     }, CACHE_DURATION)
   }
 

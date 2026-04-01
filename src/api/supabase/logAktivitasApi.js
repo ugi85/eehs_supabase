@@ -202,17 +202,29 @@ export const logAktivitasApi = {
    */
   async getTotalSchedules(year = new Date().getFullYear()) {
     try {
-      // Get all kalibrasi data
+      // Get all kalibrasi data — exclude obsolete equipment
       const { data: kalibrasiData, error: kalibrasiError } = await supabase
         .from('kalibrasi')
         .select('*')
 
       if (kalibrasiError) throw kalibrasiError
 
-      // Get all daftar alat for PM
+      // Get obsolete no_ids to filter out
+      const { data: obsoleteData } = await supabase
+        .from('daftaralat')
+        .select('no_id')
+        .eq('status', 'obsolete')
+
+      const obsoleteIds = new Set((obsoleteData || []).map(d => d.no_id))
+
+      // Filter kalibrasi — exclude obsolete
+      const activeKalibrasi = (kalibrasiData || []).filter(k => !obsoleteIds.has(k.no_id))
+
+      // Get all daftar alat for PM — exclude obsolete
       const { data: alatData, error: alatError } = await supabase
         .from('daftaralat')
         .select('*')
+        .or('status.is.null,status.neq.obsolete')
 
       if (alatError) throw alatError
 
@@ -234,8 +246,8 @@ export const logAktivitasApi = {
       const kalibrasiMonthly = months.map((month, index) => {
         const monthNum = String(index + 1).padStart(2, '0')
         
-        // Count scheduled kalibrasi for this month
-        const monthData = (kalibrasiData || []).filter(item => 
+        // Count scheduled kalibrasi for this month — exclude obsolete
+        const monthData = (activeKalibrasi || []).filter(item => 
           item.due_date && item.due_date.toLowerCase().includes(month.toLowerCase().substring(0, 3))
         )
         
@@ -309,7 +321,7 @@ export const logAktivitasApi = {
 
       return {
         success: true,
-        totalKalibrasi: kalibrasiData?.length || 0,
+        totalKalibrasi: activeKalibrasi.length,
         totalPM: (alatData || []).filter(item => item.pm_yn === 'Y').length,
         kalibrasiMonthly,
         pmMonthly
