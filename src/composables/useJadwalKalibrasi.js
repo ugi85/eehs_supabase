@@ -125,13 +125,12 @@ export function useJadwalKalibrasi() {
     }
   }
 
-  // === Auto-refresh (silent) ===
+  // === Auto-refresh (silent — tidak reinit DataTable) ===
   const startAutoRefresh = () => {
     stopAutoRefresh()
     refreshTimer = setInterval(async () => {
       localStorage.removeItem(CACHE_KEY)
-      await fetchList(true, true)
-      await initDataTable()
+      await fetchList(true, true) // silent — DataTable tetap, data update di background
     }, CACHE_DURATION)
   }
 
