@@ -37,7 +37,7 @@
             <div class="small-box bg-success">
               <div class="inner">
                 <h3>{{ totalKalibrasi || 0 }}</h3>
-                <p>Jadwal Kalibrasi</p>
+                <p>Jadwal Kalibrasi (Yearly)</p>
               </div>
               <div class="icon">
                 <i class="fas fa-balance-scale"></i>
@@ -49,7 +49,7 @@
             <div class="small-box bg-warning">
               <div class="inner">
                 <h3>{{ totalPM || 0 }}</h3>
-                <p>Jadwal PM</p>
+                <p>Jadwal PM (Yearly)</p>
               </div>
               <div class="icon">
                 <i class="fas fa-tools"></i>

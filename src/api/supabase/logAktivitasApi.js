@@ -322,7 +322,7 @@ export const logAktivitasApi = {
       return {
         success: true,
         totalKalibrasi: activeKalibrasi.length,
-        totalPM: (alatData || []).filter(item => item.pm_yn === 'Y').length,
+        totalPM: pmMonthly.reduce((sum, m) => sum + m.count, 0),
         kalibrasiMonthly,
         pmMonthly
       }
@@ -354,6 +354,7 @@ export const logAktivitasApi = {
       const { data: kalibrasiData, error: kalibrasiError } = await supabase
         .from('kalibrasi')
         .select('*')
+        .order('no_id', { ascending: true })
 
       if (kalibrasiError) {
         console.error('[Log API] Error fetching kalibrasi:', kalibrasiError)
@@ -373,14 +374,54 @@ export const logAktivitasApi = {
       const selectedDate = new Date(parseInt(year), monthIndex + 1, 0) // akhir bulan yang dipilih
       const isPastPeriod = selectedDate < new Date(now.getFullYear(), now.getMonth(), 1)
 
-      // Filter by month:
-      // - Periode lampau: tampilkan semua (termasuk obsolete) agar history tetap ada
-      // - Periode sekarang/mendatang: skip alat obsolete
+      // Helper: parse interval field ke angka bulan
+      // Contoh: "12" → 12, "24" → 24, "Yearly" → 12, "2 Yearly" → 24, "6" → 6
+      const parseIntervalMonths = (intField) => {
+        if (!intField) return 12 // default yearly
+        const str = String(intField).trim().toLowerCase()
+        // Angka langsung
+        const num = parseInt(str)
+        if (!isNaN(num) && num > 0) return num
+        // "2 yearly" → 24, "3 yearly" → 36, dst
+        const multiYearMatch = str.match(/^(\d+)\s*year/)
+        if (multiYearMatch) return parseInt(multiYearMatch[1]) * 12
+        // "yearly" → 12
+        if (str.includes('year')) return 12
+        // "6 monthly" → 6
+        const multiMonthMatch = str.match(/^(\d+)\s*month/)
+        if (multiMonthMatch) return parseInt(multiMonthMatch[1])
+        return 12
+      }
+
+      // Filter by month + interval year check
       const monthShort = month.substring(0, 3).toLowerCase()
+      const selectedYear_int = parseInt(year)
+
       const filtered = (kalibrasiData || []).filter(item => {
         if (!isPastPeriod && alatStatusMap[item.no_id] === 'obsolete') return false
         if (!item.due_date) return false
-        return item.due_date.toLowerCase().includes(monthShort)
+        if (!item.due_date.toLowerCase().includes(monthShort)) return false
+
+        // Cek interval — jika > 12 bulan, hitung apakah tahun ini adalah tahun kalibrasi
+        const intervalMonths = parseIntervalMonths(item.int)
+        if (intervalMonths <= 12) return true // yearly atau lebih sering → selalu tampil
+
+        // Untuk interval > 12 bulan:
+        const intervalYears = Math.round(intervalMonths / 12)
+        const lastExec = lastExecMap[item.calibration_id]
+
+        if (!lastExec) {
+          // Belum pernah dikalibrasi → tampilkan (pertama kali)
+          // Gunakan due_date bulan sebagai acuan: tampil di tahun yang sesuai interval dari sekarang
+          // Jika belum ada history, tampilkan di tahun pertama yang due_date-nya cocok
+          return true
+        }
+
+        // Sudah pernah dikalibrasi → hitung apakah sudah waktunya
+        const lastYear = new Date(lastExec).getFullYear()
+        const yearsDiff = selectedYear_int - lastYear
+        // Tampil jika selisih tahun adalah kelipatan interval
+        return yearsDiff > 0 && yearsDiff % intervalYears === 0
       })
 
       // Get log data for this month
@@ -395,6 +436,21 @@ export const logAktivitasApi = {
         console.error('[Log API] Error fetching log:', logError)
         throw logError
       }
+
+      // Fetch last execution per calibration_id untuk interval check
+      const { data: allKalLog } = await supabase
+        .from('logaktivitas')
+        .select('calibration_id, execute_date')
+        .eq('jenis', 'Kalibrasi')
+        .order('execute_date', { ascending: false })
+
+      // Map: calibration_id → last execute_date
+      const lastExecMap = {}
+      ;(allKalLog || []).forEach(l => {
+        if (l.calibration_id && !lastExecMap[l.calibration_id]) {
+          lastExecMap[l.calibration_id] = l.execute_date
+        }
+      })
 
       // Helper untuk decode dan fix encoding issues
       const fixEncoding = (text) => {
@@ -432,9 +488,9 @@ export const logAktivitasApi = {
 
       // Merge schedule with log data
       const result = filtered.map(item => {
-        const log = (logData || []).find(l => 
-          l.no_id === item.no_id || l.calibration_id === item.calibration_id
-        )
+        // Prioritaskan match by calibration_id (lebih spesifik), fallback ke no_id
+        const log = (logData || []).find(l => l.calibration_id === item.calibration_id)
+          || (item.calibration_id ? null : (logData || []).find(l => l.no_id === item.no_id))
         
         return {
           // Format field names sesuai yang diharapkan view
@@ -493,6 +549,7 @@ export const logAktivitasApi = {
         .from('daftaralat')
         .select('*')
         .eq('pm_yn', 'Y')
+        .order('no_id', { ascending: true })
 
       if (alatError) {
         console.error('[Log API] Error fetching alat:', alatError)
@@ -510,11 +567,7 @@ export const logAktivitasApi = {
       const monthShort = month.substring(0, 3).toLowerCase()
       const filtered = (alatData || []).filter(item => {
         if (!isPastPeriod && item.status === 'obsolete') return false
-        // Check schedule field (main field)
-        if (item.schedule) {
-          const scheduleLower = item.schedule.toLowerCase()
-          if (scheduleLower.includes(monthShort)) return true
-        }
+        // Hanya cek 6_monthly dan yearly — schedule adalah Calibration Schedule, bukan PM schedule
         
         // Check 6_monthly field (for 6-monthly PM)
         if (item['6_monthly'] && item['6_monthly'] !== 'NA' && item['6_monthly'] !== '-') {
@@ -603,18 +656,9 @@ export const logAktivitasApi = {
             dueDate = item['6_monthly']
           }
         }
-        
-        // Fallback to schedule field if interval not determined yet
-        if (pmInterval === '-' && item.schedule) {
-          dueDate = item.schedule
-          // Try to guess interval from schedule field
-          // If schedule contains comma (e.g., "Jan, Jul"), it's likely 6-monthly
-          if (item.schedule.includes(',')) {
-            pmInterval = '6'
-          } else {
-            pmInterval = '12'
-          }
-        }
+
+        // Jika tidak ada field yang cocok dengan bulan ini, skip baris ini
+        // (item.schedule adalah Calibration Schedule, bukan PM schedule — jangan dipakai sebagai fallback)
         
         return {
           // Format field names sesuai yang diharapkan view

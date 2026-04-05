@@ -312,10 +312,31 @@ export const daftarAlatApi = {
           .select()
           .single()
       } else {
-        // Create new tool
+        // Create new tool — cek duplikat no_id dulu
+        const { data: existing } = await supabase
+          .from('daftaralat')
+          .select('no_id')
+          .eq('no_id', tool.no_id)
+          .maybeSingle()
+
+        if (existing) {
+          const err = new Error(`No.ID "${tool.no_id}" sudah ada di database. Gunakan No.ID yang berbeda atau edit data yang sudah ada.`)
+          err.isDuplicate = true
+          throw err
+        }
+
+        // Fetch MAX(no) untuk bypass sequence issue
+        const { data: maxRow } = await supabase
+          .from('daftaralat')
+          .select('no')
+          .order('no', { ascending: false })
+          .limit(1)
+          .single()
+        const nextNo = (maxRow?.no || 0) + 1
+
         result = await supabase
           .from('daftaralat')
-          .insert([toolData])
+          .insert([{ ...toolData, no: nextNo }])
           .select()
           .single()
       }

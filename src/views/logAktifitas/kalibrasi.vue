@@ -32,7 +32,12 @@ const formatAuditTime = (isoString) => {
 
 const saveBacklog = async () => {
   if (!backlogModal.value.row?.log_no) {
-    Swal.fire({ icon: 'error', title: 'Error', text: 'Log ID tidak ditemukan. Pastikan aktivitas sudah disimpan terlebih dahulu.' })
+    Swal.fire({ 
+      icon: 'warning', 
+      title: 'Belum Bisa Simpan Backlog', 
+      text: 'Aktivitas ini belum disimpan ke log. Silakan isi PIC, tanggal, dan keterangan lalu klik tombol simpan terlebih dahulu.',
+      confirmButtonText: 'OK'
+    })
     return
   }
   savingBacklog.value = true
@@ -114,11 +119,19 @@ filterType.value = 'kalibrasi'
 
 // State untuk tracking
 const dataLoaded = ref(false)
-const savingRows = ref(new Set()) // ✅ UNTUK TRACKING PER-BARIS SAJA
+const savingRows = ref(new Set())
+const statusFilter = ref('all') // 'all' | 'selesai' | 'belum'
+
+const filteredLogs = computed(() => {
+  if (statusFilter.value === 'selesai') return logs.value.filter(r => r.status === 'Selesai')
+  if (statusFilter.value === 'belum') return logs.value.filter(r => r.status !== 'Selesai')
+  return logs.value
+})
 
 // State untuk users
 const usersLoading = ref(false)
-const openDropdownId = ref(null) // Track dropdown yang sedang terbuka
+const openDropdownId = ref(null)
+const picSearch = ref('') // search text untuk PIC dropdown
 
 // Computed untuk dropdown options (format: "Nama (INISIAL)") - exclude superadmin
 const userOptions = computed(() => {
@@ -130,6 +143,12 @@ const userOptions = computed(() => {
     }))
 })
 
+const filteredUserOptions = computed(() => {
+  if (!picSearch.value) return userOptions.value
+  const q = picSearch.value.toLowerCase()
+  return userOptions.value.filter(u => u.label.toLowerCase().includes(q))
+})
+
 // Fungsi untuk mendapatkan inisial dari value
 const getPicInisial = (picValue) => {
   const user = users.value.find(u => (u.inisial || u.nama) === picValue)
@@ -138,7 +157,12 @@ const getPicInisial = (picValue) => {
 
 // Toggle dropdown
 const toggleDropdown = (rowId) => {
-  openDropdownId.value = openDropdownId.value === rowId ? null : rowId
+  if (openDropdownId.value === rowId) {
+    openDropdownId.value = null
+  } else {
+    openDropdownId.value = rowId
+    picSearch.value = '' // reset search saat buka dropdown baru
+  }
 }
 
 // Pilih user dari dropdown
@@ -238,7 +262,7 @@ const handleSearch = async () => {
 // print helper – simple browser print of current view
 const printDate = ref('')
 const handlePrint = () => {
-  if (!dataLoaded.value || logs.value.length === 0) {
+  if (!dataLoaded.value || filteredLogs.value.length === 0) {
     Swal.fire({
       icon: 'warning',
       title: 'Tidak Ada Data',
@@ -248,12 +272,11 @@ const handlePrint = () => {
     return
   }
 
-  // prepare header information
   const now = new Date()
   printDate.value = `${now.getDate().toString().padStart(2,'0')}/${(now.getMonth()+1).toString().padStart(2,'0')}/${now.getFullYear()} ${now.getHours().toString().padStart(2,'0')}:${now.getMinutes().toString().padStart(2,'0')}`
 
-  // Call print service
-  printService.printKalibrasiLogs(logs.value, selectedMonth.value, selectedYear.value)
+  // Call print service dengan data yang sudah difilter
+  printService.printKalibrasiLogs(filteredLogs.value, selectedMonth.value, selectedYear.value)
 }
 
 // ✅ PERBAIKAN UTAMA: SIMPAN LANGSUNG VIA API (TANPA LEWAT COMPOSABLE)
@@ -375,7 +398,13 @@ onMounted(async () => {
               <span v-else>Cari Data</span>
             </button>
           </div>
-          <div class="col-md-5 d-flex align-items-end justify-content-end">
+          <div class="col-md-5 d-flex align-items-end justify-content-end gap-2">
+            <!-- Filter Status -->
+            <div class="btn-group btn-group-sm mr-2" role="group" v-if="dataLoaded && logs.length > 0">
+              <button type="button" class="btn" :class="statusFilter === 'all' ? 'btn-secondary' : 'btn-outline-secondary'" @click="statusFilter = 'all'">Semua</button>
+              <button type="button" class="btn" :class="statusFilter === 'selesai' ? 'btn-success' : 'btn-outline-success'" @click="statusFilter = 'selesai'">Selesai</button>
+              <button type="button" class="btn" :class="statusFilter === 'belum' ? 'btn-danger' : 'btn-outline-danger'" @click="statusFilter = 'belum'">Belum</button>
+            </div>
             <button
               class="btn btn-primary"
               :disabled="!dataLoaded || logs.length === 0"
@@ -436,7 +465,7 @@ onMounted(async () => {
                     </tr>  
                   </thead>
                   <tbody>
-                    <tr v-for="(row, index) in logs" :key="`kalibrasi-${index}`" :class="{'table-secondary': row.equipment_status === 'obsolete', 'table-success': row.status === 'Selesai' && row.equipment_status !== 'obsolete'}">
+                    <tr v-for="(row, index) in filteredLogs" :key="`kalibrasi-${index}`" :class="{'table-secondary': row.equipment_status === 'obsolete', 'table-success': row.status === 'Selesai' && row.equipment_status !== 'obsolete'}">
                       <td class="text-center">{{ index + 1 }}</td>
                       <td>{{ row['No.ID'] }}</td>
                       <td>{{ row.Description }}</td>
@@ -470,18 +499,32 @@ onMounted(async () => {
                           <div
                             v-if="openDropdownId === `kalibrasi-${index}`"
                             class="dropdown-menu show"
-                            style="display: block; max-height: 200px; overflow-y: auto; position: absolute; z-index: 1000;"
+                            style="display: block; position: absolute; z-index: 1000; width: 100%; padding: 0;"
                           >
-                            <option 
-                              v-for="user in userOptions" 
-                              :key="user.value" 
-                              :value="user.value"
-                              @click="selectUser(row, user.value)"
-                              class="dropdown-item"
-                              style="cursor: pointer; padding: 0.25rem 0.5rem;"
-                            >
-                              {{ user.label }}
-                            </option>
+                            <!-- Search input -->
+                            <div class="px-2 py-1 border-bottom">
+                              <input
+                                v-model="picSearch"
+                                type="text"
+                                class="form-control form-control-sm"
+                                placeholder="Cari nama..."
+                                @click.stop
+                                autocomplete="off"
+                              />
+                            </div>
+                            <div style="max-height: 160px; overflow-y: auto;">
+                              <div v-if="!filteredUserOptions.length" class="text-muted small px-3 py-2">Tidak ditemukan</div>
+                              <option 
+                                v-for="user in filteredUserOptions" 
+                                :key="user.value" 
+                                :value="user.value"
+                                @click="selectUser(row, user.value)"
+                                class="dropdown-item"
+                                style="cursor: pointer; padding: 0.25rem 0.5rem;"
+                              >
+                                {{ user.label }}
+                              </option>
+                            </div>
                           </div>
                         </div>
                       </td>

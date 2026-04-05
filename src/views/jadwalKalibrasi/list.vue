@@ -226,6 +226,26 @@ const isModalOpen = ref(false)
 const isEditMode = ref(false)
 const editingJadwal = ref(getEmptyJadwal())
 
+// Searchable No.ID dropdown
+const noIdSearch = ref('')
+const showNoIdDropdown = ref(false)
+const filteredDaftarAlat = computed(() => {
+  if (!noIdSearch.value) return daftarAlat.value || []
+  const q = noIdSearch.value.toLowerCase()
+  return (daftarAlat.value || []).filter(t =>
+    t.no_id?.toLowerCase().includes(q) || t.description?.toLowerCase().includes(q)
+  )
+})
+const selectNoId = (noId) => {
+  editingJadwal.value.no_id = noId
+  noIdSearch.value = noId
+  showNoIdDropdown.value = false
+}
+// Sync search text saat modal dibuka
+watch(isModalOpen, (val) => {
+  if (val) noIdSearch.value = editingJadwal.value.no_id || ''
+})
+
 // Computed untuk judul modal
 const modalTitle = computed(() =>
   isEditMode.value ? 'Edit Jadwal Kalibrasi' : 'Tambah Jadwal Kalibrasi'
@@ -652,16 +672,34 @@ onMounted(async () => {
                 </div>
                 <div class="form-group">
                   <label>No. ID <span class="text-danger">*</span></label>
-                  <select v-model="editingJadwal.no_id" class="form-control">
-                    <option value="">Pilih No.ID</option>
-                    <option
-                      v-for="t in daftarAlat"
-                      :key="t.no_id"
-                      :value="t.no_id"
+                  <!-- Searchable No.ID dropdown -->
+                  <div style="position: relative;">
+                    <input
+                      v-model="noIdSearch"
+                      type="text"
+                      class="form-control"
+                      placeholder="Ketik untuk cari No.ID..."
+                      @focus="showNoIdDropdown = true"
+                      @blur="setTimeout(() => showNoIdDropdown = false, 200)"
+                      autocomplete="off"
+                    />
+                    <div
+                      v-if="showNoIdDropdown && filteredDaftarAlat.length"
+                      style="position:absolute;z-index:1050;width:100%;max-height:200px;overflow-y:auto;background:#fff;border:1px solid #ced4da;border-radius:0 0 4px 4px;box-shadow:0 4px 8px rgba(0,0,0,.1);"
                     >
-                      {{ t.no_id }}
-                    </option>
-                  </select>
+                      <div
+                        v-for="t in filteredDaftarAlat"
+                        :key="t.no_id"
+                        @mousedown.prevent="selectNoId(t.no_id)"
+                        style="padding:6px 12px;cursor:pointer;font-size:0.875rem;"
+                        class="dropdown-item"
+                      >
+                        <strong>{{ t.no_id }}</strong>
+                        <span v-if="t.description" class="text-muted ml-1 small">— {{ t.description }}</span>
+                      </div>
+                      <div v-if="!filteredDaftarAlat.length" class="text-muted small px-3 py-2">Tidak ditemukan</div>
+                    </div>
+                  </div>
                 </div>
                 <div class="form-group">
                   <label>Description</label>
