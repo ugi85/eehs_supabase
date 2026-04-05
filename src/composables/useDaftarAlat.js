@@ -106,16 +106,20 @@ export function useDaftarAlat() {
     isSaving.value = true
     try {
       const result = await daftarAlatApi.saveTool(tool)
-      // Invalidate semua cache filter
       localStorage.removeItem(`${CACHE_KEY}_active`)
       localStorage.removeItem(`${CACHE_KEY}_obsolete`)
       localStorage.removeItem(`${CACHE_KEY}_all`)
       await fetchList(true)
+      await initDataTable()
       Swal.fire('Berhasil!', `Alat berhasil ${tool.no ? 'diupdate' : 'ditambahkan'}`, 'success')
       return result
     } catch (error) {
       console.error('Gagal simpan alat:', error)
-      Swal.fire('Error!', error.message || 'Gagal menyimpan data alat', 'error')
+      if (error.isDuplicate) {
+        Swal.fire({ icon: 'warning', title: 'ID Sudah Ada!', text: error.message })
+      } else {
+        Swal.fire('Error!', error.message || 'Gagal menyimpan data alat', 'error')
+      }
     } finally {
       isSaving.value = false
     }
@@ -145,6 +149,7 @@ export function useDaftarAlat() {
       localStorage.removeItem(`${CACHE_KEY}_obsolete`)
       localStorage.removeItem(`${CACHE_KEY}_all`)
       await fetchList(true)
+      await initDataTable()
       Swal.fire('Berhasil!', 'Alat berhasil dihapus', 'success')
       return result
     } catch (error) {

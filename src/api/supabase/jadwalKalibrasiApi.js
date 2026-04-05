@@ -313,9 +313,33 @@ export const jadwalKalibrasiApi = {
         criticality: jadwal.criticality
       }
 
+      // Cek duplikat calibration_id
+      if (jadwal.cal_id) {
+        const { data: existing } = await supabase
+          .from('kalibrasi')
+          .select('calibration_id')
+          .eq('calibration_id', jadwal.cal_id)
+          .maybeSingle()
+
+        if (existing) {
+          const err = new Error(`Calibration ID "${jadwal.cal_id}" sudah ada di database. Gunakan ID yang berbeda atau edit data yang sudah ada.`)
+          err.isDuplicate = true
+          throw err
+        }
+      }
+
+      // Fetch MAX(no) untuk bypass sequence issue
+      const { data: maxRow } = await supabase
+        .from('kalibrasi')
+        .select('no')
+        .order('no', { ascending: false })
+        .limit(1)
+        .single()
+      const nextNo = (maxRow?.no || 0) + 1
+
       const { data, error } = await supabase
         .from('kalibrasi')
-        .insert([jadwalData])
+        .insert([{ ...jadwalData, no: nextNo }])
         .select()
         .single()
 

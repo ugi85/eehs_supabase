@@ -87,7 +87,11 @@ export function useJadwalKalibrasi() {
       Swal.fire('Berhasil!', `Jadwal berhasil ${jadwal.no ? 'diupdate' : 'ditambahkan'}`, 'success')
       return result
     } catch (error) {
-      Swal.fire('Error!', error.message || 'Gagal menyimpan data jadwal', 'error')
+      if (error.isDuplicate) {
+        Swal.fire({ icon: 'warning', title: 'ID Sudah Ada!', text: error.message })
+      } else {
+        Swal.fire('Error!', error.message || 'Gagal menyimpan data jadwal', 'error')
+      }
       throw error
     } finally {
       isSaving.value = false
