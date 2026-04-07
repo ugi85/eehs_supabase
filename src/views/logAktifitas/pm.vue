@@ -268,8 +268,9 @@ const saveToLogAktivitas = async (row) => {
       throw new Error(response?.message || 'Gagal menyimpan data')
     }
 
-    // Reload data periode agar status ter-update dari DB
-    await fetchData()
+    // Update status baris ini secara lokal — TIDAK fetch ulang agar input baris lain tidak hilang
+    row.status = 'Selesai'
+    row.log_no = response.data?.no || null
     
     Swal.fire({
       icon: 'success',

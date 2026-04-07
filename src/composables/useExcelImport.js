@@ -1,5 +1,5 @@
 // src/composables/useExcelImport.js
-import { ref } from 'vue'
+import { ref, computed } from 'vue'
 import { parseExcelFile, downloadTemplate, exportToExcel } from '@/services/excelService'
 
 // ===== DAFTAR ALAT =====
@@ -132,23 +132,52 @@ export function useExcelImport() {
       if (!rows.length) throw new Error('File kosong atau tidak ada data')
 
       const fieldMap = type === 'daftarAlat' ? DAFTAR_ALAT_MAP : JADWAL_KALIBRASI_MAP
+      const keyField = type === 'daftarAlat' ? 'no_id' : 'cal_id'
+      const keyLabel = type === 'daftarAlat' ? 'No.ID' : 'Calibration ID'
 
       const errors = []
-      const mapped = rows.map((row, i) => {
+      const warnings = []
+      const keyMap = new Map() // key → index di mapped array (untuk deduplikasi)
+
+      const mapped = []
+      rows.forEach((row, i) => {
         const rowNum = i + 2
         if (!row['No.ID']) {
           errors.push(`Baris ${rowNum}: No.ID wajib diisi`)
+          return
         }
         const obj = {}
         for (const [excelKey, apiKey] of Object.entries(fieldMap)) {
           obj[apiKey] = String(row[excelKey] ?? '').trim()
         }
-        return obj
+
+        const keyVal = obj[keyField]
+        if (keyVal && keyMap.has(keyVal)) {
+          // Duplikat dalam file — replace dengan data terbaru (baris lebih bawah)
+          const existingIdx = keyMap.get(keyVal)
+          mapped[existingIdx] = obj
+          warnings.push(`Baris ${rowNum}: ${keyLabel} "${keyVal}" duplikat data dalam file`)
+        } else {
+          if (keyVal) keyMap.set(keyVal, mapped.length)
+          mapped.push(obj)
+        }
       })
 
       importErrors.value = errors
+      // Tampilkan warning sebagai info (tidak memblokir import)
+      if (warnings.length) {
+        console.warn('[Import] Duplikat dalam file:', warnings)
+      }
       importPreview.value = mapped
       showPreview.value = true
+
+      // Jika ada warning duplikat, simpan untuk ditampilkan di UI
+      if (warnings.length && !errors.length) {
+        importErrors.value = warnings.map(w => `⚠️ ${w}`)
+        // Tapi tetap izinkan import — set flag khusus
+        importPreview.value._hasWarningsOnly = true
+      }
+
       return mapped
     } catch (err) {
       importErrors.value = [err.message]
@@ -170,6 +199,26 @@ export function useExcelImport() {
     importPreview,
     showPreview,
     importMode,
+    downloadDaftarAlatTemplate,
+    downloadJadwalKalibrasiTemplate,
+    exportDaftarAlat,
+    exportJadwalKalibrasi,
+    parseImportFile,
+    resetImport
+  }
+
+  // hasBlockingErrors: true jika ada error yang memblokir import (bukan hanya warning ⚠️)
+  const hasBlockingErrors = computed(() =>
+    importErrors.value.some(e => !e.startsWith('⚠️'))
+  )
+
+  return {
+    importing,
+    importErrors,
+    importPreview,
+    showPreview,
+    importMode,
+    hasBlockingErrors,
     downloadDaftarAlatTemplate,
     downloadJadwalKalibrasiTemplate,
     exportDaftarAlat,
