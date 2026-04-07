@@ -207,14 +207,26 @@ export const jadwalKalibrasiApi = {
       criticality: jadwal.criticality
     })
 
+    // Fetch MAX(no) untuk assign manual ke data baru (bypass sequence issue)
+    let nextNo = 0
+    if (toInsert.length > 0) {
+      const { data: maxRow } = await supabase
+        .from('kalibrasi')
+        .select('no')
+        .order('no', { ascending: false })
+        .limit(1)
+        .single()
+      nextNo = (maxRow?.no || 0) + 1
+    }
+
     const results = await Promise.allSettled([
       ...toUpdate.map(async (jadwal) => {
         const result = await supabase.from('kalibrasi').update(buildData(jadwal)).eq('no', existingMap[jadwal.cal_id].no).select().single()
         if (result.error) throw new Error(result.error.message)
         return { action: 'updated', no_id: jadwal.no_id }
       }),
-      ...toInsert.map(async (jadwal) => {
-        const result = await supabase.from('kalibrasi').insert([buildData(jadwal)]).select().single()
+      ...toInsert.map(async (jadwal, i) => {
+        const result = await supabase.from('kalibrasi').insert([{ ...buildData(jadwal), no: nextNo + i }]).select().single()
         if (result.error) throw new Error(result.error.message)
         return { action: 'inserted', no_id: jadwal.no_id }
       })

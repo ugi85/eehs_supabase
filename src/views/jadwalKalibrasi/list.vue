@@ -28,6 +28,7 @@ const {
   importPreview,
   showPreview,
   importMode,
+  hasBlockingErrors,
   downloadJadwalKalibrasiTemplate,
   exportJadwalKalibrasi,
   parseImportFile,
@@ -57,20 +58,36 @@ const handleFileChange = async (e) => {
 }
 
 const confirmImport = async () => {
-  if (!importPreview.value.length || importErrors.value.length) return
+  // Cek langsung — jangan bergantung pada hasBlockingErrors yang mungkin tidak reaktif
+  const hasRealErrors = importErrors.value.some(e => !String(e).startsWith('⚠️'))
+  if (!importPreview.value.length || hasRealErrors) return
   importing.value = true
 
   try {
     const results = await jadwalKalibrasiApi.upsertBatch(importPreview.value, importMode.value)
-    const inserted = results.filter(r => r.success && r.action === 'inserted').length
+    const insertedItems = results.filter(r => r.success && r.action === 'inserted')
+    const inserted = insertedItems.length
     const updated = results.filter(r => r.success && r.action === 'updated').length
     const skipped = results.filter(r => r.success && r.action === 'skipped').length
     const failed = results.filter(r => !r.success)
 
     closeImportModal()
-    await fetchList(true) // loading = true → Vue render spinner → loading = false → Vue render tabel → initDataTable
+    await fetchList(true)
     await nextTick()
     await initDataTable()
+
+    // Navigasi ke halaman terakhir agar data baru terlihat
+    if (inserted > 0) {
+      await nextTick()
+      try {
+        const table = document.querySelector('.jadwal-kalibrasi-table')
+        if (table && $.fn.DataTable.isDataTable(table)) {
+          const dt = $(table).DataTable()
+          const info = dt.page.info()
+          if (info && info.pages > 0) dt.page(info.pages - 1).draw('page')
+        }
+      } catch (e) { /* DataTable belum siap, skip navigasi */ }
+    }
 
     const parts = []
     if (inserted) parts.push(`${inserted} data baru ditambahkan`)
@@ -78,11 +95,14 @@ const confirmImport = async () => {
     if (skipped) parts.push(`${skipped} data tidak berubah (dilewati)`)
     const msg = parts.join(', ') + '.'
 
+    const insertedList = insertedItems.slice(0, 10).map(r => r.no_id).join(', ')
+    const insertedDetail = inserted > 0 ? `\n\nData baru: ${insertedList}${inserted > 10 ? ` ... (+${inserted - 10} lainnya)` : ''}` : ''
+
     if (failed.length) {
       const errList = failed.slice(0, 5).map(f => `${f.no_id}: ${f.error}`).join('\n')
-      Swal.fire('Import Selesai', `${msg}\n\nGagal (${failed.length}):\n${errList}`, 'warning')
+      Swal.fire('Import Selesai', `${msg}${insertedDetail}\n\nGagal (${failed.length}):\n${errList}`, 'warning')
     } else {
-      Swal.fire('Berhasil!', msg, 'success')
+      Swal.fire({ icon: 'success', title: 'Import Berhasil!', html: `${msg}${insertedDetail.replace(/\n/g, '<br>')}` })
     }
   } catch (err) {
     Swal.fire('Error!', err.message || 'Gagal import data', 'error')
@@ -630,7 +650,7 @@ onMounted(async () => {
             <button
               class="btn btn-primary"
               @click="confirmImport"
-              :disabled="importing || !importPreview.length || importErrors.length > 0"
+              :disabled="importing || !importPreview.length || hasBlockingErrors"
             >
               <span v-if="importing">
                 <span class="spinner-border spinner-border-sm mr-1"></span>Mengimport...
