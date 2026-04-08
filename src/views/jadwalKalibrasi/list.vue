@@ -14,6 +14,7 @@ const {
   fetchList,
   saveJadwal,
   deleteJadwal,
+  bulkDeleteJadwal,
   isSaving,
   initDataTable,
   startAutoRefresh,
@@ -194,28 +195,28 @@ const handleBulkDelete = async () => {
         }
       })
 
-      // Delete sequentially
-      for (const no of selectedJadwal.value) {
-        await deleteJadwal(no)
-      }
+      // Bulk delete (single flow, supports large data via chunking)
+      const resultBulk = await bulkDeleteJadwal(selectedJadwal.value)
 
       // Reset
       selectedJadwal.value = []
       bulkDeleteMode.value = false
 
-      // Refresh
-      await nextTick()
-      await new Promise(resolve => setTimeout(resolve, 300))
-      await fetchList()
-
-      // Success
-      Swal.fire({
-        icon: 'success',
-        title: 'Berhasil!',
-        text: `${deletedCount} jadwal berhasil dihapus.`,
-        timer: 2000,
-        showConfirmButton: false
-      })
+      if (resultBulk?.failedChunks?.length) {
+        Swal.fire({
+          icon: 'warning',
+          title: 'Bulk Delete Selesai Sebagian',
+          html: `Berhasil menghapus <strong>${resultBulk.deletedCount}</strong> dari <strong>${deletedCount}</strong> jadwal.<br><small class="text-muted">Beberapa chunk gagal, silakan ulangi untuk sisa data.</small>`
+        })
+      } else {
+        Swal.fire({
+          icon: 'success',
+          title: 'Berhasil!',
+          text: `${resultBulk?.deletedCount ?? deletedCount} jadwal berhasil dihapus.`,
+          timer: 2000,
+          showConfirmButton: false
+        })
+      }
     }
   } catch (error) {
     console.error('Error saat bulk delete:', error)

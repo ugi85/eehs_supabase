@@ -27,6 +27,7 @@ const {
   initAllActivities,
   fetchAllLogs,
   deleteLog,
+  bulkDeleteLogs,
   getJenisBadgeClass,
   showFormDialog,
   formMode,
@@ -143,10 +144,18 @@ const handleBulkDelete = async () => {
 
   const count = selectedLogs.value.length
   Swal.fire({ title: 'Menghapus...', allowOutsideClick: false, didOpen: () => Swal.showLoading() })
-  for (const no of [...selectedLogs.value]) await deleteLog(no)
+  const resultBulk = await bulkDeleteLogs(selectedLogs.value)
   selectedLogs.value = []; isSelectAll.value = false; bulkDeleteMode.value = false
   await setBacklogFilter(backlogFilter.value)
-  Swal.fire({ icon: 'success', title: 'Berhasil!', text: `${count} log berhasil dihapus.`, timer: 2000, showConfirmButton: false })
+  if (resultBulk?.failedChunks?.length) {
+    Swal.fire({
+      icon: 'warning',
+      title: 'Bulk Delete Selesai Sebagian',
+      html: `Berhasil menghapus <strong>${resultBulk.deletedCount}</strong> dari <strong>${count}</strong> log.<br><small class="text-muted">Beberapa chunk gagal, silakan ulangi untuk sisa data.</small>`
+    })
+  } else {
+    Swal.fire({ icon: 'success', title: 'Berhasil!', text: `${resultBulk?.deletedCount ?? count} log berhasil dihapus.`, timer: 2000, showConfirmButton: false })
+  }
 }
 
 // Edit / Delete

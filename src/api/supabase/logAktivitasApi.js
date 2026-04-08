@@ -173,6 +173,59 @@ export const logAktivitasApi = {
   },
 
   /**
+   * DELETE: Bulk delete log aktivitas by no (supports large payload via chunking)
+   */
+  async bulkDelete(ids = [], chunkSize = 200) {
+    try {
+      const normalizedIds = [...new Set((ids || [])
+        .map(id => Number(id))
+        .filter(id => Number.isFinite(id)))]
+
+      if (normalizedIds.length === 0) {
+        return {
+          success: true,
+          totalRequested: 0,
+          deletedCount: 0,
+          failedChunks: []
+        }
+      }
+
+      let deletedCount = 0
+      const failedChunks = []
+
+      for (let i = 0; i < normalizedIds.length; i += chunkSize) {
+        const chunkIds = normalizedIds.slice(i, i + chunkSize)
+
+        const { error, count } = await supabase
+          .from('logaktivitas')
+          .delete({ count: 'exact' })
+          .in('no', chunkIds)
+
+        if (error) {
+          failedChunks.push({
+            startIndex: i,
+            size: chunkIds.length,
+            error: error.message
+          })
+          continue
+        }
+
+        deletedCount += (count ?? chunkIds.length)
+      }
+
+      return {
+        success: failedChunks.length === 0,
+        totalRequested: normalizedIds.length,
+        deletedCount,
+        failedChunks
+      }
+    } catch (error) {
+      console.error('[Log Aktivitas API] Error bulkDelete:', error)
+      throw new Error(error.message || 'Gagal menghapus log aktivitas secara massal')
+    }
+  },
+
+  /**
    * GET: Total Daftar Alat (untuk dashboard) - excludes obsolete
    */
   async getTotalDaftarAlat() {
@@ -202,29 +255,17 @@ export const logAktivitasApi = {
    */
   async getTotalSchedules(year = new Date().getFullYear()) {
     try {
-      // Get all kalibrasi data — exclude obsolete equipment
+      // Get all kalibrasi data
       const { data: kalibrasiData, error: kalibrasiError } = await supabase
         .from('kalibrasi')
         .select('*')
 
       if (kalibrasiError) throw kalibrasiError
 
-      // Get obsolete no_ids to filter out
-      const { data: obsoleteData } = await supabase
-        .from('daftaralat')
-        .select('no_id')
-        .eq('status', 'obsolete')
-
-      const obsoleteIds = new Set((obsoleteData || []).map(d => d.no_id))
-
-      // Filter kalibrasi — exclude obsolete
-      const activeKalibrasi = (kalibrasiData || []).filter(k => !obsoleteIds.has(k.no_id))
-
-      // Get all daftar alat for PM — exclude obsolete
+      // Get all daftar alat for PM
       const { data: alatData, error: alatError } = await supabase
         .from('daftaralat')
         .select('*')
-        .or('status.is.null,status.neq.obsolete')
 
       if (alatError) throw alatError
 
@@ -246,8 +287,8 @@ export const logAktivitasApi = {
       const kalibrasiMonthly = months.map((month, index) => {
         const monthNum = String(index + 1).padStart(2, '0')
         
-        // Count scheduled kalibrasi for this month — exclude obsolete
-        const monthData = (activeKalibrasi || []).filter(item => 
+        // Count scheduled kalibrasi for this month
+        const monthData = (kalibrasiData || []).filter(item => 
           item.due_date && item.due_date.toLowerCase().includes(month.toLowerCase().substring(0, 3))
         )
         
@@ -270,20 +311,21 @@ export const logAktivitasApi = {
         }
       })
 
-      // Process PM monthly (check schedule, 6_monthly, and yearly fields)
+      // Process PM monthly (aligned with getPMForPeriod logic)
+      const now = new Date()
       const pmMonthly = months.map((month, index) => {
         const monthNum = String(index + 1).padStart(2, '0')
         const monthShort = month.substring(0, 3).toLowerCase()
+        const selectedDate = new Date(parseInt(year), index + 1, 0)
+        const isPastPeriod = selectedDate < new Date(now.getFullYear(), now.getMonth(), 1)
         
-        // Count scheduled PM for this month - check all relevant fields
+        // Count scheduled PM for this month
+        // Rule disamakan dengan getPMForPeriod:
+        // - hanya pakai 6_monthly & yearly (schedule bukan PM schedule)
+        // - obsolete hanya di-skip untuk periode sekarang/mendatang
         const monthData = (alatData || []).filter(item => {
           if (item.pm_yn !== 'Y') return false
-          
-          // Check schedule field
-          if (item.schedule) {
-            const scheduleLower = item.schedule.toLowerCase()
-            if (scheduleLower.includes(monthShort)) return true
-          }
+          if (!isPastPeriod && item.status === 'obsolete') return false
           
           // Check 6_monthly field (for 6-monthly PM)
           if (item['6_monthly'] && item['6_monthly'] !== 'NA' && item['6_monthly'] !== '-') {
@@ -321,7 +363,7 @@ export const logAktivitasApi = {
 
       return {
         success: true,
-        totalKalibrasi: activeKalibrasi.length,
+        totalKalibrasi: (kalibrasiData || []).length,
         totalPM: pmMonthly.reduce((sum, m) => sum + m.count, 0),
         kalibrasiMonthly,
         pmMonthly
@@ -931,4 +973,7 @@ export const logAktivitasApi = {
     return this.update(log.no || log.log_no, log)
   }
 }
+
+
+
 

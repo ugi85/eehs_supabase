@@ -129,6 +129,25 @@ export function useJadwalKalibrasi() {
     }
   }
 
+  // === BULK DELETE (silent, no per-item popup) ===
+  const bulkDeleteJadwal = async (ids = []) => {
+    isDeleting.value = true
+    try {
+      const result = await jadwalKalibrasiApi.bulkDelete(ids)
+
+      localStorage.removeItem(CACHE_KEY)
+      await fetchList(true)
+      await initDataTable()
+
+      return result
+    } catch (error) {
+      console.error('[ERROR] Gagal bulk delete jadwal:', error)
+      throw error
+    } finally {
+      isDeleting.value = false
+    }
+  }
+
   // === Auto-refresh (silent — tidak reinit DataTable) ===
   const startAutoRefresh = () => {
     stopAutoRefresh()
@@ -158,7 +177,7 @@ export function useJadwalKalibrasi() {
 
   return {
     refJadwal, loading, isSaving, isDeleting,
-    fetchList, saveJadwal, deleteJadwal, saveLogActivity,
+    fetchList, saveJadwal, deleteJadwal, bulkDeleteJadwal, saveLogActivity,
     initDataTable, startAutoRefresh, stopAutoRefresh
   }
 }
