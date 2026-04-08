@@ -6,7 +6,7 @@ import { usePermissions } from '@/composables/usePermissions'
 import { useExcelImport } from '@/composables/useExcelImport'
 import { daftarAlatApi } from '@/api'
 
-const { tools, loading, fetchList, saveTool, isSaving, deleteTool, startAutoRefresh, statusFilter, setStatusFilter, initDataTable } = useDaftarAlat()
+const { tools, loading, fetchList, saveTool, isSaving, deleteTool, bulkDeleteTools, startAutoRefresh, statusFilter, setStatusFilter, initDataTable } = useDaftarAlat()
 const { config } = useFrontendConfig()
 const permission = usePermissions()
 
@@ -181,53 +181,28 @@ const handleBulkDelete = async () => {
         }
       })
 
-      // Delete sequentially
-      for (const no of selectedTools.value) {
-        await deleteTool(no)
-      }
+      // Bulk delete (single flow, supports large data via chunking)
+      const resultBulk = await bulkDeleteTools(selectedTools.value)
 
       // Reset
       selectedTools.value = []
       bulkDeleteMode.value = false
 
-      // Refresh DataTable
-      await nextTick()
-      await new Promise(resolve => setTimeout(resolve, 300))
-      
-      // Reinitialize DataTables
-      if (window.$ && window.$.fn.DataTable) {
-        const table = document.querySelector('.daftar-alat-table')
-        if (table && $.fn.DataTable.isDataTable(table)) {
-          const dt = $.fn.DataTable(table)
-          dt.destroy()
-          setTimeout(() => {
-            $(table).DataTable({
-              paging: true,
-              lengthChange: true,
-              searching: true,
-              ordering: true,
-              info: true,
-              autoWidth: false,
-              responsive: false,
-              scrollX: true,
-              language: {
-                url: '//cdn.datatables.net/plug-ins/1.13.4/i18n/id.json',
-                search: "_INPUT_",
-                searchPlaceholder: "Cari data..."
-              }
-            })
-          }, 100)
-        }
+      if (resultBulk?.failedChunks?.length) {
+        Swal.fire({
+          icon: 'warning',
+          title: 'Bulk Delete Selesai Sebagian',
+          html: `Berhasil menghapus <strong>${resultBulk.deletedCount}</strong> dari <strong>${deletedCount}</strong> alat.<br><small class="text-muted">Beberapa chunk gagal, silakan ulangi untuk sisa data.</small>`
+        })
+      } else {
+        Swal.fire({
+          icon: 'success',
+          title: 'Berhasil!',
+          text: `${resultBulk?.deletedCount ?? deletedCount} alat berhasil dihapus.`,
+          timer: 2000,
+          showConfirmButton: false
+        })
       }
-
-      // Success
-      Swal.fire({
-        icon: 'success',
-        title: 'Berhasil!',
-        text: `${deletedCount} alat berhasil dihapus.`,
-        timer: 2000,
-        showConfirmButton: false
-      })
     }
   } catch (error) {
     console.error('Error saat bulk delete:', error)

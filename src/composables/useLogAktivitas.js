@@ -237,6 +237,19 @@ export function useLogAktivitas() {
     }
   }
 
+  async function bulkDeleteLogs(ids = []) {
+    loading.value = true
+    try {
+      const result = await logAktivitasApi.bulkDelete(ids)
+      await fetchAllLogs(true)
+      return result
+    } catch (error) {
+      throw error
+    } finally {
+      loading.value = false
+    }
+  }
+
   async function getLogByNo(no) {
     return await logAktivitasApi.getLogByNo(no)
   }
@@ -337,7 +350,7 @@ export function useLogAktivitas() {
     getLogsByMonthYear: fetchData,
     listLogs: fetchAllLogs,
     getDaftarAlat, getLogByNo,
-    createLog, updateLog, deleteLog,
+    createLog, updateLog, deleteLog, bulkDeleteLogs,
     openFormDialog, closeFormDialog,
     handleFilterChange, handleSubmit,
     getStatusBadgeClass, getJenisBadgeClass,

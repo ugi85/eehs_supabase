@@ -450,6 +450,59 @@ export const jadwalKalibrasiApi = {
   },
 
   /**
+   * DELETE: Bulk delete jadwal kalibrasi by no (supports large payload via chunking)
+   */
+  async bulkDelete(ids = [], chunkSize = 200) {
+    try {
+      const normalizedIds = [...new Set((ids || [])
+        .map(id => Number(id))
+        .filter(id => Number.isFinite(id)))]
+
+      if (normalizedIds.length === 0) {
+        return {
+          success: true,
+          totalRequested: 0,
+          deletedCount: 0,
+          failedChunks: []
+        }
+      }
+
+      let deletedCount = 0
+      const failedChunks = []
+
+      for (let i = 0; i < normalizedIds.length; i += chunkSize) {
+        const chunkIds = normalizedIds.slice(i, i + chunkSize)
+
+        const { error, count } = await supabase
+          .from('kalibrasi')
+          .delete({ count: 'exact' })
+          .in('no', chunkIds)
+
+        if (error) {
+          failedChunks.push({
+            startIndex: i,
+            size: chunkIds.length,
+            error: error.message
+          })
+          continue
+        }
+
+        deletedCount += (count ?? chunkIds.length)
+      }
+
+      return {
+        success: failedChunks.length === 0,
+        totalRequested: normalizedIds.length,
+        deletedCount,
+        failedChunks
+      }
+    } catch (error) {
+      console.error('[Jadwal Kalibrasi API] Error bulkDelete:', error)
+      throw new Error(error.message || 'Gagal menghapus jadwal secara massal')
+    }
+  },
+
+  /**
    * GET: Filter by due date (upcoming calibrations)
    */
   async getUpcoming(months = 3) {

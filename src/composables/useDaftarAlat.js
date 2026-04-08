@@ -160,6 +160,28 @@ export function useDaftarAlat() {
     }
   }
 
+  // === BULK DELETE (silent, no per-item popup) ===
+  const bulkDeleteTools = async (ids = []) => {
+    isDeleting.value = true
+    try {
+      const result = await daftarAlatApi.bulkDeleteTools(ids)
+
+      localStorage.removeItem(`${CACHE_KEY}_active`)
+      localStorage.removeItem(`${CACHE_KEY}_obsolete`)
+      localStorage.removeItem(`${CACHE_KEY}_all`)
+
+      await fetchList(true)
+      await initDataTable()
+
+      return result
+    } catch (error) {
+      console.error('[ERROR] Gagal bulk delete alat:', error)
+      throw error
+    } finally {
+      isDeleting.value = false
+    }
+  }
+
   return {
     tools,
     loading,
@@ -168,6 +190,7 @@ export function useDaftarAlat() {
     setStatusFilter,
     saveTool,
     deleteTool,
+    bulkDeleteTools,
     isSaving,
     isDeleting,
     initDataTable,
