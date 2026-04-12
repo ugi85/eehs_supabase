@@ -30,6 +30,37 @@ const formatAuditTime = (isoString) => {
   return `${pad(d.getDate())}/${pad(d.getMonth()+1)}/${d.getFullYear()} ${pad(d.getHours())}:${pad(d.getMinutes())}`
 }
 
+// Format audit trail info untuk tooltip
+const formatAuditInfo = (row) => {
+  const parts = []
+
+  if (row.created_at) {
+    const date = new Date(row.created_at).toLocaleString('id-ID', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
+    parts.push(`Dibuat: ${date}`)
+    if (row.created_by) parts.push(`oleh ${row.created_by}`)
+  }
+
+  if (row.updated_at && row.updated_at !== row.created_at) {
+    const date = new Date(row.updated_at).toLocaleString('id-ID', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
+    parts.push(`Update: ${date}`)
+    if (row.updated_by) parts.push(`oleh ${row.updated_by}`)
+  }
+
+  return parts.join('\n') || 'Tidak ada informasi audit'
+}
+
 const saveBacklog = async () => {
   if (!backlogModal.value.row?.log_no) return
   savingBacklog.value = true
@@ -425,7 +456,13 @@ onMounted(async () => {
                   <tbody>
                     <tr v-for="(row, index) in filteredLogs" :key="'pm-' + index" :class="{'table-secondary': row.equipment_status === 'obsolete', 'table-success': row.status === 'Selesai' && row.equipment_status !== 'obsolete'}">
                       <td class="text-center">{{ index + 1 }}</td>
-                      <td>{{ row['No.ID'] }}</td>
+                      <td>
+                        {{ row['No.ID'] }}
+                        <!-- Audit trail tooltip -->
+                        <span v-if="row.created_at || row.updated_at" class="ml-1" style="cursor: help;" :title="formatAuditInfo(row)">
+                          <i class="fas fa-info-circle text-muted" style="font-size: 0.75rem;"></i>
+                        </span>
+                      </td>
                       <td>{{ row.Description }}</td>
                       <td>{{ row['Type/Model'] || row.Parameter || '-' }}</td>
                       <td>{{ row.SN || '-' }}</td>

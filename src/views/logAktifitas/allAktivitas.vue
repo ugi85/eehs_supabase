@@ -236,6 +236,37 @@ const handleDelete = async (no, noId, calId) => {
   Swal.fire('Dihapus!', 'Log aktivitas berhasil dihapus.', 'success')
 }
 
+// Format audit trail info untuk tooltip
+const formatAuditInfo = (log) => {
+  const parts = []
+
+  if (log.created_at) {
+    const date = new Date(log.created_at).toLocaleString('id-ID', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
+    parts.push(`Dibuat: ${date}`)
+    if (log.created_by) parts.push(`oleh ${log.created_by}`)
+  }
+
+  if (log.updated_at && log.updated_at !== log.created_at) {
+    const date = new Date(log.updated_at).toLocaleString('id-ID', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
+    parts.push(`Update: ${date}`)
+    if (log.updated_by) parts.push(`oleh ${log.updated_by}`)
+  }
+
+  return parts.join('\n') || 'Tidak ada informasi audit'
+}
+
 watch(showFormDialog, (val) => {
   if (val) $('#logFormModal').modal('show')
   else $('#logFormModal').modal('hide')
@@ -451,6 +482,10 @@ onMounted(async () => {
                         {{ log.no_id || '-' }}
                         <span v-if="log.equipment_status === 'obsolete'" class="badge badge-secondary ml-1" title="Alat sudah obsolete">
                           obsolete
+                        </span>
+                        <!-- Audit trail tooltip -->
+                        <span v-if="log.created_at || log.updated_at" class="ml-1" style="cursor: help;" :title="formatAuditInfo(log)">
+                          <i class="fas fa-info-circle text-muted" style="font-size: 0.75rem;"></i>
                         </span>
                       </td>
                       <td>{{ log.description || log.type_model || '-' }}</td>

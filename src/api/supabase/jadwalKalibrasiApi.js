@@ -78,7 +78,12 @@ export const jadwalKalibrasiApi = {
           interval: item.int,
           due_date: item.due_date,
           remark: item.remark,
-          criticality: item.criticality
+          criticality: item.criticality,
+          // Audit trail columns dari tabel kalibrasi
+          created_at: item.created_at || null,
+          updated_at: item.updated_at || null,
+          created_by: item.created_by || null,
+          updated_by: item.updated_by || null
         }))
 
       return {
@@ -177,7 +182,9 @@ export const jadwalKalibrasiApi = {
       : jadwals.filter(j => {
           if (!existingMap[j.cal_id]) return false
           const ex = existingMap[j.cal_id]
-          return (
+          
+          // Debug: lihat perbandingan data
+          const hasChanges = (
             (j.no_id || '') !== (ex.no_id || '') ||
             (j.description || '') !== (ex.description || '') ||
             (j.parameter || '') !== (ex.parameter || '') ||
@@ -188,11 +195,53 @@ export const jadwalKalibrasiApi = {
             (j.remark || '') !== (ex.remark || '') ||
             (j.criticality || '') !== (ex.criticality || '')
           )
+          
+          if (hasChanges) {
+            console.log(`[Import] Terdeteksi perubahan untuk ${j.cal_id}:`, {
+              import_data: {
+                no_id: j.no_id,
+                description: j.description,
+                parameter: j.parameter,
+                interval: j.interval,
+                due_date: j.due_date
+              },
+              db_data: {
+                no_id: ex.no_id,
+                description: ex.description,
+                parameter: ex.parameter,
+                interval: String(ex.int),
+                due_date: ex.due_date
+              },
+              differences: {
+                no_id: (j.no_id || '') !== (ex.no_id || ''),
+                description: (j.description || '') !== (ex.description || ''),
+                parameter: (j.parameter || '') !== (ex.parameter || ''),
+                interval: (j.interval || '') !== (String(ex.int) || ''),
+                due_date: (j.due_date || '') !== (ex.due_date || '')
+              }
+            })
+          }
+          
+          return hasChanges
         })
 
     const skipped = mode === 'insert_only'
       ? jadwals.filter(j => existingMap[j.cal_id])
       : jadwals.filter(j => existingMap[j.cal_id] && !toUpdate.find(u => u.cal_id === j.cal_id))
+
+    // Debug: tampilkan berapa banyak data yang akan diproses
+    console.log(`[Import] Summary:`, {
+      total: jadwals.length,
+      to_insert: toInsert.length,
+      to_update: toUpdate.length,
+      skipped: skipped.length,
+      mode: mode
+    })
+
+    if (skipped.length > 0 && mode === 'upsert') {
+      console.log(`[Import] Data yang di-skip (tidak ada perubahan):`, skipped.slice(0, 5).map(j => j.cal_id))
+      if (skipped.length > 5) console.log(`  ... dan ${skipped.length - 5} lainnya`)
+    }
 
     const buildData = (jadwal) => ({
       no_id: jadwal.no_id,
@@ -548,6 +597,56 @@ export const jadwalKalibrasiApi = {
       }
     } catch (error) {
       return handleSupabaseError(error)
+    }
+  },
+
+  /**
+   * GET: Audit trail info from daftaralat for given no_ids
+   * Returns map of no_id -> {created_at, updated_at, created_by, updated_by}
+   */
+  async getAuditTrailByNoIds(noIds = []) {
+    try {
+      if (!noIds || noIds.length === 0) {
+        return {
+          success: true,
+          data: {}
+        }
+      }
+
+      const { data, error } = await supabase
+        .from('daftaralat')
+        .select('no_id, created_at, updated_at, created_by, updated_by')
+        .in('no_id', noIds)
+
+      if (error) {
+        console.warn('[Jadwal Kalibrasi API] Warning fetching audit trail:', error.message)
+        return {
+          success: true,
+          data: {}
+        }
+      }
+
+      // Convert to map for easy lookup
+      const auditMap = {}
+      ;(data || []).forEach(item => {
+        auditMap[item.no_id] = {
+          created_at: item.created_at || null,
+          updated_at: item.updated_at || null,
+          created_by: item.created_by || null,
+          updated_by: item.updated_by || null
+        }
+      })
+
+      return {
+        success: true,
+        data: auditMap
+      }
+    } catch (error) {
+      console.warn('[Jadwal Kalibrasi API] Error in getAuditTrailByNoIds:', error.message)
+      return {
+        success: true,
+        data: {}
+      }
     }
   }
 }

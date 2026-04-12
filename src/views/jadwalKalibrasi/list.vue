@@ -67,8 +67,9 @@ const confirmImport = async () => {
   try {
     const results = await jadwalKalibrasiApi.upsertBatch(importPreview.value, importMode.value)
     const insertedItems = results.filter(r => r.success && r.action === 'inserted')
+    const updatedItems = results.filter(r => r.success && r.action === 'updated')
     const inserted = insertedItems.length
-    const updated = results.filter(r => r.success && r.action === 'updated').length
+    const updated = updatedItems.length
     const skipped = results.filter(r => r.success && r.action === 'skipped').length
     const failed = results.filter(r => !r.success)
 
@@ -98,12 +99,15 @@ const confirmImport = async () => {
 
     const insertedList = insertedItems.slice(0, 10).map(r => r.no_id).join(', ')
     const insertedDetail = inserted > 0 ? `\n\nData baru: ${insertedList}${inserted > 10 ? ` ... (+${inserted - 10} lainnya)` : ''}` : ''
+    const updatedList = updatedItems.slice(0, 10).map(r => r.no_id).join(', ')
+    const updatedDetail = updated > 0 ? `\nData diperbarui: ${updatedList}${updated > 10 ? ` ... (+${updated - 10} lainnya)` : ''}` : ''
+    const detail = `${insertedDetail}${updatedDetail}`
 
     if (failed.length) {
       const errList = failed.slice(0, 5).map(f => `${f.no_id}: ${f.error}`).join('\n')
-      Swal.fire('Import Selesai', `${msg}${insertedDetail}\n\nGagal (${failed.length}):\n${errList}`, 'warning')
+      Swal.fire('Import Selesai', `${msg}${detail}\n\nGagal (${failed.length}):\n${errList}`, 'warning')
     } else {
-      Swal.fire({ icon: 'success', title: 'Import Berhasil!', html: `${msg}${insertedDetail.replace(/\n/g, '<br>')}` })
+      Swal.fire({ icon: 'success', title: 'Import Berhasil!', html: `${msg}${detail.replace(/\n/g, '<br>')}` })
     }
   } catch (err) {
     Swal.fire('Error!', err.message || 'Gagal import data', 'error')
@@ -396,8 +400,95 @@ const handleDelete = (no) => {
   deleteJadwal(no)
 }
 
+// Fetch audit trail data dan gabungkan dengan refJadwal (hanya sebagai fallback)
+const enrichWithAuditData = async () => {
+  try {
+    // Ambil semua no_id yang unik yang BELUM punya data audit dari kalibrasi
+    const needEnrich = refJadwal.value.filter(j => !j.created_at && !j.updated_at)
+    
+    if (needEnrich.length === 0) {
+      // Semua data sudah punya audit trail dari kalibrasi
+      return
+    }
+
+    const noIds = [...new Set(needEnrich.map(j => j.no_id).filter(Boolean))]
+    
+    if (noIds.length === 0) return
+
+    // Panggil API untuk mendapatkan audit trail dari daftaralat (fallback)
+    const auditResult = await jadwalKalibrasiApi.getAuditTrailByNoIds(noIds)
+    
+    if (!auditResult.success) return
+
+    const auditMap = auditResult.data
+
+    // Gabungkan data audit ke setiap row yang belum punya data
+    refJadwal.value = refJadwal.value.map(jadwal => {
+      // Jika sudah punya data audit dari kalibrasi, jangan timpa
+      if (jadwal.created_at || jadwal.updated_at) {
+        return jadwal
+      }
+      
+      // Fallback ke daftaralat
+      return {
+        ...jadwal,
+        created_at: auditMap[jadwal.no_id]?.created_at || null,
+        updated_at: auditMap[jadwal.no_id]?.updated_at || null,
+        created_by: auditMap[jadwal.no_id]?.created_by || null,
+        updated_by: auditMap[jadwal.no_id]?.updated_by || null
+      }
+    })
+  } catch (error) {
+    console.error('[Jadwal Kalibrasi] Error enriching audit data:', error)
+  }
+}
+
+// Format audit trail info untuk tooltip
+const formatAuditInfo = (jadwal) => {
+  const parts = []
+
+  if (jadwal.created_at) {
+    const date = new Date(jadwal.created_at).toLocaleString('id-ID', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
+    parts.push(`Dibuat: ${date}`)
+    if (jadwal.created_by) parts.push(`oleh ${jadwal.created_by}`)
+  }
+
+  if (jadwal.updated_at && jadwal.updated_at !== jadwal.created_at) {
+    const date = new Date(jadwal.updated_at).toLocaleString('id-ID', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
+    parts.push(`Update: ${date}`)
+    if (jadwal.updated_by) parts.push(`oleh ${jadwal.updated_by}`)
+  }
+
+  return parts.join('\n') || 'Tidak ada informasi audit'
+}
+
+// Watcher: setiap data berubah, enrich dengan audit trail
+let enrichTimeout = null
+watch(refJadwal, async (newData) => {
+  if (newData && newData.length > 0) {
+    // Debounce untuk menghindari pemanggilan berulang
+    if (enrichTimeout) clearTimeout(enrichTimeout)
+    enrichTimeout = setTimeout(async () => {
+      await enrichWithAuditData()
+    }, 100)
+  }
+}, { deep: false }) // shallow watch karena array reference berubah
+
 onMounted(async () => {
   await fetchList()
+  await enrichWithAuditData() // Tambahkan data audit trail
   await nextTick()
   await initDataTable()
   fetchDaftarAlat()
@@ -407,6 +498,7 @@ onMounted(async () => {
     if (document.visibilityState === 'visible') {
       localStorage.removeItem('jadwal_kalibrasi_cache')
       fetchList(true, true) // silent
+      // enrichWithAuditData akan dipanggil otomatis oleh watcher
     }
   }
   document.addEventListener('visibilitychange', onVisibility)
@@ -521,7 +613,12 @@ onMounted(async () => {
                       />
                     </td>
                     <td class="text-center">{{ index + 1 }}</td>
-                    <td>{{ row.no_id || '—' }}</td>
+                    <td>{{ row.no_id || '—' }}
+                      <!-- Audit trail tooltip -->
+                      <span v-if="row.created_at || row.updated_at" class="ml-1" style="cursor: help;" :title="formatAuditInfo(row)">
+                        <i class="fas fa-info-circle text-muted" style="font-size: 0.75rem;"></i>
+                      </span>
+                    </td>
                     <td>{{ row.description || '—' }}</td>
                     <td>{{ row.cal_id || '—' }}</td>
                     <td>{{ row.parameter || '—' }}</td>

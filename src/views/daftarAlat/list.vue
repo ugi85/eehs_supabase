@@ -53,8 +53,9 @@ const confirmImport = async () => {
   try {
     const results = await daftarAlatApi.upsertBatch(importPreview.value, importMode.value)
     const insertedItems = results.filter(r => r.success && r.action === 'inserted')
+    const updatedItems = results.filter(r => r.success && r.action === 'updated')
     const inserted = insertedItems.length
-    const updated = results.filter(r => r.success && r.action === 'updated').length
+    const updated = updatedItems.length
     const skipped = results.filter(r => r.success && r.action === 'skipped').length
     const failed = results.filter(r => !r.success)
 
@@ -85,12 +86,15 @@ const confirmImport = async () => {
     // Tampilkan daftar No.ID yang baru diinsert jika ada
     const insertedList = insertedItems.slice(0, 10).map(r => r.no_id).join(', ')
     const insertedDetail = inserted > 0 ? `\n\nData baru: ${insertedList}${inserted > 10 ? ` ... (+${inserted - 10} lainnya)` : ''}` : ''
+    const updatedList = updatedItems.slice(0, 10).map(r => r.no_id).join(', ')
+    const updatedDetail = updated > 0 ? `\nData diperbarui: ${updatedList}${updated > 10 ? ` ... (+${updated - 10} lainnya)` : ''}` : ''
+    const detail = `${insertedDetail}${updatedDetail}`
 
     if (failed.length) {
       const errList = failed.slice(0, 5).map(f => `${f.no_id}: ${f.error}`).join('\n')
-      Swal.fire('Import Selesai', `${msg}${insertedDetail}\n\nGagal (${failed.length}):\n${errList}`, 'warning')
+      Swal.fire('Import Selesai', `${msg}${detail}\n\nGagal (${failed.length}):\n${errList}`, 'warning')
     } else {
-      Swal.fire({ icon: 'success', title: 'Import Berhasil!', html: `${msg}${insertedDetail.replace(/\n/g, '<br>')}` })
+      Swal.fire({ icon: 'success', title: 'Import Berhasil!', html: `${msg}${detail.replace(/\n/g, '<br>')}` })
     }
   } catch (err) {
     Swal.fire('Error!', err.message || 'Gagal import data', 'error')
@@ -187,6 +191,11 @@ const handleBulkDelete = async () => {
       // Reset
       selectedTools.value = []
       bulkDeleteMode.value = false
+
+      // Refresh data dan reinit DataTable agar kolom checkbox tersembunyi kembali
+      await fetchList(true)
+      await nextTick()
+      await initDataTable()
 
       if (resultBulk?.failedChunks?.length) {
         Swal.fire({
@@ -312,6 +321,37 @@ const saveEditingTool = async () => {
 // Hapus
 const handleDelete = (no) => {
   deleteTool(no)
+}
+
+// Format audit trail info untuk tooltip
+const formatAuditInfo = (tool) => {
+  const parts = []
+
+  if (tool.created_at) {
+    const date = new Date(tool.created_at).toLocaleString('id-ID', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
+    parts.push(`Dibuat: ${date}`)
+    if (tool.created_by) parts.push(`oleh ${tool.created_by}`)
+  }
+
+  if (tool.updated_at && tool.updated_at !== tool.created_at) {
+    const date = new Date(tool.updated_at).toLocaleString('id-ID', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit'
+    })
+    parts.push(`Update: ${date}`)
+    if (tool.updated_by) parts.push(`oleh ${tool.updated_by}`)
+  }
+
+  return parts.join('\n') || 'Tidak ada informasi audit'
 }
 
 onMounted(async () => {
@@ -463,6 +503,10 @@ onMounted(async () => {
                     <td class="text-center">{{ index + 1 }}</td>
                     <td>{{ tool.no_id || '—' }}
                       <span v-if="tool.status === 'obsolete'" class="badge badge-secondary ml-1">obsolete</span>
+                      <!-- Audit trail tooltip -->
+                      <span v-if="tool.created_at || tool.updated_at" class="ml-1" style="cursor: help;" :title="formatAuditInfo(tool)">
+                        <i class="fas fa-info-circle text-muted" style="font-size: 0.75rem;"></i>
+                      </span>
                     </td>
                     <td>{{ tool.description || '—' }}</td>
                     <td>{{ tool.type_model || '—' }}</td>
