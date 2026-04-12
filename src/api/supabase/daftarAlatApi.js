@@ -51,7 +51,12 @@ export const daftarAlatApi = {
         area: item.area,
         status: item.status || 'active',
         status_pm: '',
-        status_calibration: ''
+        status_calibration: '',
+        // Audit trail
+        created_at: item.created_at,
+        updated_at: item.updated_at,
+        created_by: item.created_by,
+        updated_by: item.updated_by
       }))
 
       return mappedData
@@ -278,7 +283,7 @@ export const daftarAlatApi = {
   /**
    * POST: Save tool (create or update)
    */
-  async saveTool(tool) {
+  async saveTool(tool, user = null) {
     try {
       const toolData = {
         no_id: tool.no_id,
@@ -299,6 +304,18 @@ export const daftarAlatApi = {
         area: tool.area,
         location: tool.location,
         status: tool.status || null
+      }
+
+      // Tambahkan audit trail jika user tersedia
+      if (user) {
+        if (tool.no) {
+          // Update
+          toolData.updated_by = user.email || user.id_user || user.nama || 'unknown'
+        } else {
+          // Create
+          toolData.created_by = user.email || user.id_user || user.nama || 'unknown'
+          toolData.updated_by = user.email || user.id_user || user.nama || 'unknown'
+        }
       }
 
       let result
@@ -394,11 +411,14 @@ export const daftarAlatApi = {
         }
       }
 
+      console.log(`[Bulk Delete] Starting deletion of ${normalizedIds.length} items...`)
+
       let deletedCount = 0
       const failedChunks = []
 
       for (let i = 0; i < normalizedIds.length; i += chunkSize) {
         const chunkIds = normalizedIds.slice(i, i + chunkSize)
+        console.log(`[Bulk Delete] Processing chunk ${i / chunkSize + 1}: ${chunkIds.length} items`)
 
         const { error, count } = await supabase
           .from('daftaralat')
@@ -406,16 +426,22 @@ export const daftarAlatApi = {
           .in('no', chunkIds)
 
         if (error) {
+          console.error(`[Bulk Delete] Chunk ${i / chunkSize + 1} failed:`, error)
           failedChunks.push({
             startIndex: i,
             size: chunkIds.length,
-            error: error.message
+            error: error.message,
+            details: error.details || null,
+            hint: error.hint || null
           })
           continue
         }
 
         deletedCount += (count ?? chunkIds.length)
+        console.log(`[Bulk Delete] Chunk ${i / chunkSize + 1} success: ${count} items deleted`)
       }
+
+      console.log(`[Bulk Delete] Completed: ${deletedCount}/${normalizedIds.length} items deleted`)
 
       return {
         success: failedChunks.length === 0,

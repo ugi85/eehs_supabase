@@ -2,6 +2,40 @@
 import { supabase, handleSupabaseError } from '@/config/supabase'
 
 /**
+ * Helper: Determine if a period is in the past
+ * @param {number} month - Month index (0-11)
+ * @param {number} year - Year
+ * @returns {boolean} True if period is in the past
+ */
+function isPastPeriod(month, year) {
+  const now = new Date()
+  const selectedDate = new Date(year, month + 1, 0) // Last day of the month
+  return selectedDate < new Date(now.getFullYear(), now.getMonth(), 1)
+}
+
+/**
+ * Helper: Filter logs by exact month/year match
+ * @param {Array} logs - Array of log objects
+ * @param {string} jenis - 'Kalibrasi' or 'PM'
+ * @param {number} monthIndex - Month index (0-11)
+ * @param {number} year - Year
+ * @returns {Array} Filtered logs
+ */
+function filterLogsByMonth(logs, jenis, monthIndex, year) {
+  const monthNum = String(monthIndex + 1).padStart(2, '0')
+
+  return (logs || []).filter(item => {
+    if (item.jenis !== jenis || !item.execute_date) return false
+
+    // Check if execute_date matches the expected month/year
+    const logDate = new Date(item.execute_date)
+    return logDate.getMonth() === monthIndex &&
+           logDate.getFullYear() === year &&
+           item.execute_date.includes(`${year}-${monthNum}`)
+  })
+}
+
+/**
  * Log Aktivitas API - Supabase Integration
  * Table: logaktivitas
  * Columns: no, no_id, calibration_id, jenis, execute_date, pic, keterangan
@@ -284,25 +318,25 @@ export const logAktivitasApi = {
         'July', 'August', 'September', 'October', 'November', 'December'
       ]
 
+      const now = new Date()
       const kalibrasiMonthly = months.map((month, index) => {
         const monthNum = String(index + 1).padStart(2, '0')
-        
+        const isPast = isPastPeriod(index, parseInt(year))
+
         // Count scheduled kalibrasi for this month
-        const monthData = (kalibrasiData || []).filter(item => 
+        const monthData = (kalibrasiData || []).filter(item =>
           item.due_date && item.due_date.toLowerCase().includes(month.toLowerCase().substring(0, 3))
         )
-        
-        // Count executed kalibrasi from log
-        const executedData = (logData || []).filter(item => 
-          item.jenis === 'Kalibrasi' && 
-          item.execute_date && 
-          item.execute_date.includes(`${year}-${monthNum}`)
-        )
-        
-        const count = monthData.length
+
+        // Count executed kalibrasi using helper
+        const executedData = filterLogsByMonth(logData, 'Kalibrasi', index, parseInt(year))
         const executed = executedData.length
+
+        // Untuk bulan yang sudah lewat: count = executed (hanya tampilkan yang sudah dikerjakan)
+        // Untuk bulan sekarang/mendatang: count = jadwal yang ada
+        const count = isPast ? executed : monthData.length
         const executedPercentage = count > 0 ? Math.round((executed / count) * 100) : 0
-        
+
         return {
           month,
           count,
@@ -312,13 +346,12 @@ export const logAktivitasApi = {
       })
 
       // Process PM monthly (aligned with getPMForPeriod logic)
-      const now = new Date()
       const pmMonthly = months.map((month, index) => {
         const monthNum = String(index + 1).padStart(2, '0')
         const monthShort = month.substring(0, 3).toLowerCase()
         const selectedDate = new Date(parseInt(year), index + 1, 0)
         const isPastPeriod = selectedDate < new Date(now.getFullYear(), now.getMonth(), 1)
-        
+
         // Count scheduled PM for this month
         // Rule disamakan dengan getPMForPeriod:
         // - hanya pakai 6_monthly & yearly (schedule bukan PM schedule)
@@ -326,33 +359,41 @@ export const logAktivitasApi = {
         const monthData = (alatData || []).filter(item => {
           if (item.pm_yn !== 'Y') return false
           if (!isPastPeriod && item.status === 'obsolete') return false
-          
+
           // Check 6_monthly field (for 6-monthly PM)
           if (item['6_monthly'] && item['6_monthly'] !== 'NA' && item['6_monthly'] !== '-') {
             const sixMonthlyLower = item['6_monthly'].toLowerCase()
             if (sixMonthlyLower.includes(monthShort)) return true
           }
-          
+
           // Check yearly field (for yearly PM)
           if (item.yearly && item.yearly !== 'NA' && item.yearly !== '-') {
             const yearlyLower = item.yearly.toLowerCase()
             if (yearlyLower.includes(monthShort)) return true
           }
-          
+
           return false
         })
-        
-        // Count executed PM from log
-        const executedData = (logData || []).filter(item => 
-          item.jenis === 'PM' && 
-          item.execute_date && 
-          item.execute_date.includes(`${year}-${monthNum}`)
-        )
-        
-        const count = monthData.length
+
+        // Count executed PM from log - hanya yang benar-benar dieksekusi di bulan ini
+        const executedData = (logData || []).filter(item => {
+          if (item.jenis !== 'PM' || !item.execute_date) return false
+
+          // Cek apakah execute_date sesuai dengan bulan/tahun yang dipilih
+          if (!item.execute_date.includes(`${year}-${monthNum}`)) return false
+
+          // Pastikan log benar-benar milik bulan ini
+          const logDate = new Date(item.execute_date)
+          return logDate.getMonth() === index && logDate.getFullYear() === parseInt(year)
+        })
+
         const executed = executedData.length
+
+        // Untuk bulan yang sudah lewat: count = executed (hanya tampilkan yang sudah dikerjakan)
+        // Untuk bulan sekarang/mendatang: count = jadwal yang ada
+        const count = isPastPeriod ? executed : monthData.length
         const executedPercentage = count > 0 ? Math.round((executed / count) * 100) : 0
-        
+
         return {
           month,
           count,
@@ -403,13 +444,17 @@ export const logAktivitasApi = {
         throw kalibrasiError
       }
 
-      // Ambil status alat
+      // Ambil status alat + audit trail columns untuk fallback
       const { data: alatStatusData } = await supabase
         .from('daftaralat')
-        .select('no_id, status')
+        .select('no_id, status, created_at, updated_at, created_by, updated_by')
 
+      const alatMap = {}
       const alatStatusMap = {}
-      ;(alatStatusData || []).forEach(d => { alatStatusMap[d.no_id] = d.status })
+      ;(alatStatusData || []).forEach(d => {
+        alatStatusMap[d.no_id] = d.status
+        alatMap[d.no_id] = d
+      })
 
       // Tentukan apakah periode ini sudah lewat
       const now = new Date()
@@ -528,12 +573,33 @@ export const logAktivitasApi = {
         return fixed
       }
 
+      // Fetch kalibrasi data for audit trail (jika tabel kalibrasi sudah punya kolom audit)
+      let kalibrasiAuditMap = {}
+      try {
+        const { data: kalibrasiAudit, error: kalError } = await supabase
+          .from('kalibrasi')
+          .select('no_id, calibration_id, created_at, updated_at, created_by, updated_by')
+
+        if (!kalError) {
+          kalibrasiAuditMap = {}
+          ;(kalibrasiAudit || []).forEach(kal => {
+            kalibrasiAuditMap[kal.calibration_id] = kal
+          })
+        }
+      } catch (kalError) {
+        console.warn('[Log API] Warning: kalibrasi table may not have audit columns:', kalError.message)
+      }
+
       // Merge schedule with log data
       const result = filtered.map(item => {
         // Prioritaskan match by calibration_id (lebih spesifik), fallback ke no_id
         const log = (logData || []).find(l => l.calibration_id === item.calibration_id)
           || (item.calibration_id ? null : (logData || []).find(l => l.no_id === item.no_id))
-        
+
+        // Audit trail: prioritas dari kalibrasi table, fallback dari daftaralat
+        const kalibrasiAudit = item.calibration_id ? kalibrasiAuditMap[item.calibration_id] : null
+        const alatAudit = alatMap[item.no_id] || {}
+
         return {
           // Format field names sesuai yang diharapkan view
           'No.ID': item.no_id,
@@ -552,6 +618,11 @@ export const logAktivitasApi = {
           'log_no': log?.no || null,
           'status': log ? 'Selesai' : 'Belum',
           'equipment_status': alatStatusMap[item.no_id] || 'active',
+          // Audit trail fields - prioritas: kalibrasi > daftaralat
+          'created_at': kalibrasiAudit?.created_at || alatAudit.created_at || null,
+          'updated_at': kalibrasiAudit?.updated_at || alatAudit.updated_at || null,
+          'created_by': kalibrasiAudit?.created_by || alatAudit.created_by || null,
+          'updated_by': kalibrasiAudit?.updated_by || alatAudit.updated_by || null,
           'backlog_status': log?.backlog_status || null,
           'backlog_notes': log?.backlog_notes || null,
           'backlog_updated_at': log?.backlog_updated_at || null,
@@ -676,11 +747,11 @@ export const logAktivitasApi = {
       // Merge schedule with log data
       const result = filtered.map(item => {
         const log = (logData || []).find(l => l.no_id === item.no_id)
-        
+
         // Determine PM interval based on which field contains the schedule
         let pmInterval = '-'
         let dueDate = '-'
-        
+
         // Check if this month is in yearly field
         if (item.yearly && item.yearly !== 'NA' && item.yearly !== '-' && item.yearly.trim() !== '') {
           const yearlyLower = item.yearly.toLowerCase()
@@ -689,7 +760,7 @@ export const logAktivitasApi = {
             dueDate = item.yearly
           }
         }
-        
+
         // Check if this month is in 6_monthly field
         if (pmInterval === '-' && item['6_monthly'] && item['6_monthly'] !== 'NA' && item['6_monthly'] !== '-' && item['6_monthly'].trim() !== '') {
           const sixMonthlyLower = item['6_monthly'].toLowerCase()
@@ -701,7 +772,7 @@ export const logAktivitasApi = {
 
         // Jika tidak ada field yang cocok dengan bulan ini, skip baris ini
         // (item.schedule adalah Calibration Schedule, bukan PM schedule — jangan dipakai sebagai fallback)
-        
+
         return {
           // Format field names sesuai yang diharapkan view
           'No.ID': item.no_id,
@@ -719,6 +790,11 @@ export const logAktivitasApi = {
           'log_no': log?.no || null,
           'status': log ? 'Selesai' : 'Belum',
           'equipment_status': item.status || 'active',
+          // Audit trail fields - prioritas: dari logaktivitas, fallback dari daftaralat
+          'created_at': log?.created_at || item.created_at || null,
+          'updated_at': log?.updated_at || item.updated_at || null,
+          'created_by': log?.created_by || item.created_by || null,
+          'updated_by': log?.updated_by || item.updated_by || null,
           'backlog_status': log?.backlog_status || null,
           'backlog_notes': log?.backlog_notes || null,
           'backlog_updated_at': log?.backlog_updated_at || null,
@@ -772,7 +848,9 @@ export const logAktivitasApi = {
       const { data, error } = await supabase
         .from('logaktivitas')
         .select('*')
-        .order('execute_date', { ascending: false })
+        // Urutkan berdasarkan data terbaru yang TERINPUT (auto increment no)
+        // agar log yang baru ditambahkan tampil di baris paling atas.
+        .order('no', { ascending: false })
 
       if (error) throw error
 
@@ -973,6 +1051,7 @@ export const logAktivitasApi = {
     return this.update(log.no || log.log_no, log)
   }
 }
+
 
 
 

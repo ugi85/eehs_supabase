@@ -35,7 +35,13 @@ export function useJadwalKalibrasi() {
         scrollX: true,
         scrollCollapse: true,
         lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, 'All']],
-        language: { search: '_INPUT_', searchPlaceholder: 'Cari data...' }
+        language: { search: '_INPUT_', searchPlaceholder: 'Cari data...' },
+        // Default sorting: kolom pertama (No) ascending, sesuai urutan dari API
+        order: [[0, 'asc']],
+        // Kolom checkbox (index 0) tidak bisa di-sort
+        columnDefs: [
+          { orderable: false, targets: [0] } // Checkbox column
+        ]
       })
     }
   }
