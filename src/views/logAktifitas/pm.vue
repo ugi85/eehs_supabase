@@ -110,11 +110,36 @@ filterType.value = 'pm'
 const dataLoaded = ref(false)
 const savingRows = ref(new Set())
 const statusFilter = ref('all') // 'all' | 'selesai' | 'belum'
+const searchQuery = ref('') // Kolom pencarian
 
 const filteredLogs = computed(() => {
-  if (statusFilter.value === 'selesai') return logs.value.filter(r => r.status === 'Selesai')
-  if (statusFilter.value === 'belum') return logs.value.filter(r => r.status !== 'Selesai')
-  return logs.value
+  let result = logs.value
+  
+  // Filter by status
+  if (statusFilter.value === 'selesai') result = result.filter(r => r.status === 'Selesai')
+  if (statusFilter.value === 'belum') result = result.filter(r => r.status !== 'Selesai')
+  
+  // Filter by search query
+  if (searchQuery.value) {
+    const q = searchQuery.value.toLowerCase()
+    result = result.filter(row => {
+      // Cari di SEMUA kolom yang ditampilkan
+      return (
+        (row['No.ID'] && row['No.ID'].toLowerCase().includes(q)) ||
+        (row.Description && row.Description.toLowerCase().includes(q)) ||
+        (row['Type/Model'] && row['Type/Model'].toLowerCase().includes(q)) ||
+        (row.Parameter && row.Parameter.toLowerCase().includes(q)) ||
+        (row.SN && row.SN.toLowerCase().includes(q)) ||
+        (row.pm_interval && row.pm_interval.toLowerCase().includes(q)) ||
+        (row['Due Date'] && row['Due Date'].toLowerCase().includes(q)) ||
+        (row.pic && row.pic.toLowerCase().includes(q)) ||
+        (row.execute_date && row.execute_date.toLowerCase().includes(q)) ||
+        (row.ket && row.ket.toLowerCase().includes(q))
+      )
+    })
+  }
+  
+  return result
 })
 
 // State untuk users
@@ -395,6 +420,16 @@ onMounted(async () => {
               <button type="button" class="btn" :class="statusFilter === 'all' ? 'btn-secondary' : 'btn-outline-secondary'" @click="statusFilter = 'all'">Semua</button>
               <button type="button" class="btn" :class="statusFilter === 'selesai' ? 'btn-success' : 'btn-outline-success'" @click="statusFilter = 'selesai'">Selesai</button>
               <button type="button" class="btn" :class="statusFilter === 'belum' ? 'btn-danger' : 'btn-outline-danger'" @click="statusFilter = 'belum'">Belum</button>
+            </div>
+            <!-- Search input -->
+            <div class="form-group mr-2" style="margin-bottom: 0;">
+              <input 
+                v-model="searchQuery" 
+                type="text" 
+                class="form-control form-control-sm" 
+                placeholder="Cari..."
+                style="width: 120px;"
+              />
             </div>
             <button
               class="btn btn-primary"
