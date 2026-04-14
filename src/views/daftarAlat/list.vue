@@ -5,6 +5,7 @@ import { useFrontendConfig } from '@/composables/useConfig'
 import { usePermissions } from '@/composables/usePermissions'
 import { useExcelImport } from '@/composables/useExcelImport'
 import { daftarAlatApi } from '@/api'
+import { printService } from '@/services/printService'
 
 const { tools, loading, fetchList, saveTool, isSaving, deleteTool, bulkDeleteTools, startAutoRefresh, statusFilter, setStatusFilter, initDataTable } = useDaftarAlat()
 const { config } = useFrontendConfig()
@@ -101,6 +102,11 @@ const confirmImport = async () => {
   } finally {
     importing.value = false
   }
+}
+
+// Print Daftar Alat
+const handlePrint = () => {
+  printService.printDaftarAlat(tools.value)
 }
 
 const isLoggedIn = computed(() => permission.isLoggedIn.value)
@@ -365,57 +371,90 @@ onMounted(async () => {
 
 <template>
   <div class="content-wrapper">
-    <!-- Header dengan Tombol Tambah -->
-    <section class="content-header">
-      <div class="container-fluid">
-        <!-- Baris 1: Judul + Tambah Alat -->
-        <div class="d-flex justify-content-between align-items-center mb-2 header-row">
-          <div>
-            <h1 class="page-title mb-0">Daftar Alat & Perawatan</h1>
-            <small class="page-subtitle">No Reff: {{ documentRefEquipment }}</small>
-          </div>
-          <button v-if="canCreate" class="btn btn-info btn-sm" @click="openCreateModal">
-            <i class="fas fa-plus mr-1"></i><span class="btn-label-mobile"> Tambah Alat</span>
-          </button>
-        </div>
-        <!-- Baris 2: Filter + Export/Import -->
-        <div class="header-actions" v-if="isAdmin">
-          <!-- Filter toggle -->
-          <div class="btn-group btn-group-sm" role="group">
-            <button
-              type="button"
-              class="btn"
-              :class="statusFilter === 'active' ? 'btn-success' : 'btn-outline-success'"
-              @click="setStatusFilter('active')"
-            >Aktif</button>
-            <button
-              type="button"
-              class="btn"
-              :class="statusFilter === 'obsolete' ? 'btn-secondary' : 'btn-outline-secondary'"
-              @click="setStatusFilter('obsolete')"
-            >Obsolete</button>
-            <button
-              type="button"
-              class="btn"
-              :class="statusFilter === 'all' ? 'btn-dark' : 'btn-outline-dark'"
-              @click="setStatusFilter('all')"
-            >Semua</button>
-          </div>
-          <!-- Export / Import -->
-          <div class="btn-group btn-group-sm">
-            <button class="btn btn-outline-success" @click="exportDaftarAlat(tools)" title="Export ke Excel">
-              <i class="fas fa-file-excel"></i><span class="btn-label-mobile ml-1">Export</span>
-            </button>
-            <button class="btn btn-outline-secondary" @click="downloadDaftarAlatTemplate" title="Download template">
-              <i class="fas fa-download"></i><span class="btn-label-mobile ml-1">Template</span>
-            </button>
-            <button class="btn btn-outline-primary" @click="openImportModal" title="Import dari Excel">
-              <i class="fas fa-file-upload"></i><span class="btn-label-mobile ml-1">Import</span>
-            </button>
-          </div>
-        </div>
+<!-- Header dengan Tombol Tambah & Print -->
+<section class="content-header">
+  <div class="container-fluid">
+    
+    <!-- Baris 1: Judul + Tombol Aksi (Print/Tambah) -->
+    <div class="d-flex justify-content-between align-items-center mb-2 header-row">
+      
+      <!-- Kiri: Judul -->
+      <div>
+        <h1 class="page-title mb-0">Daftar Alat & Perawatan</h1>
+        <small class="page-subtitle">No Reff: {{ documentRefEquipment }}</small>
       </div>
-    </section>
+
+      <!-- Kanan: Tombol Print (non-admin) atau Tambah + Print (admin) -->
+      <div class="d-flex align-items-center gap-2">
+        <!-- Print button: untuk non-admin -->
+        <button 
+          v-if="!isAdmin" 
+          class="btn btn-outline-info btn-sm d-flex align-items-center" 
+          @click="handlePrint" 
+          title="Print daftar alat"
+        >
+          <i class="fas fa-print"></i>
+          <span class="btn-label-mobile ml-1">Print</span>
+        </button>
+        
+        <!-- Tombol Tambah: hanya admin -->
+        <button v-if="canCreate" class="btn btn-info btn-sm" @click="openCreateModal">
+          <i class="fas fa-plus mr-1"></i><span class="btn-label-mobile"> Tambah Alat</span>
+        </button>
+        
+        <!-- Print button: untuk admin (sejajar dengan Import) -->
+        <button 
+          v-if="isAdmin" 
+          class="btn btn-outline-info btn-sm d-flex align-items-center" 
+          @click="handlePrint" 
+          title="Print daftar alat"
+        >
+          <i class="fas fa-print"></i>
+          <span class="btn-label-mobile ml-1">Print</span>
+        </button>
+      </div>
+    </div>
+
+    <!-- Baris 2: Filter + Export/Import (hanya untuk admin) -->
+    <div class="header-actions d-flex justify-content-end" v-if="isAdmin">
+      <!-- Filter toggle -->
+      <div class="btn-group btn-group-sm mr-2" role="group">
+        <button
+          type="button"
+          class="btn"
+          :class="statusFilter === 'active' ? 'btn-success' : 'btn-outline-success'"
+          @click="setStatusFilter('active')"
+        >Aktif</button>
+        <button
+          type="button"
+          class="btn"
+          :class="statusFilter === 'obsolete' ? 'btn-secondary' : 'btn-outline-secondary'"
+          @click="setStatusFilter('obsolete')"
+        >Obsolete</button>
+        <button
+          type="button"
+          class="btn"
+          :class="statusFilter === 'all' ? 'btn-dark' : 'btn-outline-dark'"
+          @click="setStatusFilter('all')"
+        >Semua</button>
+      </div>
+      
+      <!-- Export / Import -->
+      <div class="btn-group btn-group-sm">
+        <button class="btn btn-outline-success" @click="exportDaftarAlat(tools)" title="Export ke Excel">
+          <i class="fas fa-file-excel"></i><span class="btn-label-mobile ml-1">Export</span>
+        </button>
+        <button class="btn btn-outline-secondary" @click="downloadDaftarAlatTemplate" title="Download template">
+          <i class="fas fa-download"></i><span class="btn-label-mobile ml-1">Template</span>
+        </button>
+        <button class="btn btn-outline-primary" @click="openImportModal" title="Import dari Excel">
+          <i class="fas fa-file-upload"></i><span class="btn-label-mobile ml-1">Import</span>
+        </button>
+      </div>
+    </div>
+    
+  </div>
+</section>
 
     <section class="content">
       <div class="container-fluid">
@@ -978,9 +1017,71 @@ onMounted(async () => {
   flex-direction: column;
 }
 
+/* Print button wrapper styling */
+.print-button-wrapper {
+  margin-top: 0.5rem;
+  display: flex;
+  justify-content: flex-end;
+}
+
 .modal-body {
   max-height: calc(100vh - 200px);
   overflow-y: auto;
   flex: 1;
+}
+
+/* ✅ Utility: gap konsisten untuk flex container */
+.gap-2 {
+  gap: 0.5rem !important;
+}
+
+/* ✅ Header alignment fixes */
+.header-row {
+  flex-wrap: wrap;
+  gap: 1rem;
+}
+
+.header-actions {
+  padding-top: 0.25rem;
+}
+
+/* ✅ Tombol Print konsisten ukurannya */
+.btn-outline-info.btn-sm {
+  min-width: auto;
+  padding: 0.25rem 0.75rem;
+}
+
+/* ✅ Responsive: tumpuk rapi di mobile */
+@media (max-width: 768px) {
+  .header-row {
+    flex-direction: column;
+    align-items: flex-start !important;
+  }
+  
+  .header-row > div {
+    width: 100%;
+    justify-content: space-between !important;
+  }
+  
+  .btn-label-mobile {
+    display: inline !important;
+  }
+  
+  .header-actions {
+    justify-content: flex-start !important;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+  }
+}
+
+/* ✅ Sembunyikan label teks di layar kecil (opsional) */
+@media (max-width: 576px) {
+  .btn-label-mobile {
+    display: none !important;
+  }
+  .btn-outline-info.btn-sm,
+  .btn-group-sm > .btn {
+    padding: 0.25rem 0.5rem;
+  }
 }
 </style>
