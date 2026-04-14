@@ -237,22 +237,19 @@ export const printService = {
             <th rowspan="2" style="width: 10%;">Type/Model</th>
             <th rowspan="2" style="width: 10%;">SN</th>
             <th rowspan="2" style="width: 5%;">Year</th>
-            <th rowspan="2" style="width: 5%;">Criticality<br>(Y/N)</th>
-            <th colspan="4" style="width: 16%;">PM</th>
-            <th colspan="3" style="width: 12%;">Calibration</th>
-            <th rowspan="2" style="width: 5%;">PIC</th>
-            <th rowspan="2" style="width: 5%;">Dikerjakan<br>tgl:</th>
-            <th rowspan="2" style="width: 10%;">Keterangan</th>
+            <th colspan="4" style="width: 16%;text-align:center;">Criticality (Y/N)</th>
+            <th colspan="4" style="width: 16%;text-align:center;">PM</th>
+            <th colspan="2" style="width: 8%;text-align:center;">Calibration</th>
           </tr>
           <tr>
             <th style="width: 4%;">Product</th>
             <th style="width: 4%;">Process</th>
             <th style="width: 4%;">Safety</th>
-            <th style="width: 4%;">Enviroment</th>
+            <th style="width: 4%;">Environment</th>
             <th style="width: 4%;">Y/N</th>
             <th style="width: 4%;">6 Monthly</th>
             <th style="width: 4%;">Yearly</th>
-            <th style="width: 4%;">6/12</th>
+            <th style="width: 4%;">Internal/External</th>
             <th style="width: 4%;">Y/N</th>
             <th style="width: 4%;">Schedule</th>
           </tr>
@@ -261,28 +258,41 @@ export const printService = {
     `
 
     alat.forEach((item, index) => {
+      // Support both Excel format (exported) and database format
+      const noId = item['No. ID'] || item.no_id || ''
+      const description = item.Description || item.description || ''
+      const typeModel = item['Type/Model'] || item.type_model || ''
+      const sn = item.SN || item.sn || ''
+      const year = item.Year || item.year || ''
+      const critProduct = item['PM Product'] || item.crit_product || ''
+      const critProcess = item['PM Process'] || item.crit_process || ''
+      const critSafety = item['PM Safety'] || item.crit_safety || ''
+      const critEnvironment = item['PM Enviroment'] || item['PM Environment'] || item.crit_env || ''
+      const pmYesNo = item['PM Y/N'] || item.pm_overall || ''
+      const cal6Monthly = item['Calibration 6 Monthly'] || item.pm_6monthly || ''
+      const calYearly = item['Calibration Yearly'] || item.pm_yearly || ''
+      const calInternalExternal = item['Calibration 6/12'] || item.pm_internal_external || ''
+      const calYesNo = item['Calibration Y/N'] || item.calib_yesno || ''
+      const calSchedule = item['Calibration Schedule'] || item.calib_schedule || ''
+
       tableContent += `
         <tr>
           <td class="text-center">${index + 1}</td>
-          <td>${item['No. ID'] || ''}</td>
-          <td>${item.Description || ''}</td>
-          <td>${item['Type/Model'] || ''}</td>
-          <td>${item.SN || ''}</td>
-          <td class="text-center">${item.Year || ''}</td>
-          <td class="text-center">${item.Criticality || ''}</td>
-          <td class="text-center">${item['PM Product'] || ''}</td>
-          <td class="text-center">${item['PM Process'] || ''}</td>
-          <td class="text-center">${item['PM Safety'] || ''}</td>
-          <td class="text-center">${item['PM Enviroment'] || ''}</td>
-          <td class="text-center">${item['PM Y/N'] || ''}</td>
-          <td class="text-center">${item['Calibration 6 Monthly'] || ''}</td>
-          <td class="text-center">${item['Calibration Yearly'] || ''}</td>
-          <td class="text-center">${item['Calibration 6/12'] || ''}</td>
-          <td class="text-center">${item['Calibration Y/N'] || ''}</td>
-          <td class="text-center">${item['Calibration Schedule'] || ''}</td>
-          <td>${item.PIC || ''}</td>
-          <td class="text-center">${item['Dikerjakan tgl'] || ''}</td>
-          <td>${item.Keterangan || ''}</td>
+          <td>${noId}</td>
+          <td>${description}</td>
+          <td>${typeModel}</td>
+          <td>${sn}</td>
+          <td class="text-center">${year}</td>
+          <td class="text-center">${critProduct}</td>
+          <td class="text-center">${critProcess}</td>
+          <td class="text-center">${critSafety}</td>
+          <td class="text-center">${critEnvironment}</td>
+          <td class="text-center">${pmYesNo}</td>
+          <td class="text-center">${cal6Monthly}</td>
+          <td class="text-center">${calYearly}</td>
+          <td class="text-center">${calInternalExternal}</td>
+          <td class="text-center">${calYesNo}</td>
+          <td class="text-center">${calSchedule}</td>
         </tr>
       `
     })
@@ -324,6 +334,7 @@ export const printService = {
             <th rowspan="2" style="width: 12%;">Parameter</th>
             <th rowspan="2" style="width: 12%;">Process Range</th>
             <th rowspan="2" style="width: 12%;">Reject Error</th>
+            <th rowspan="2" style="width: 8%;">Interval</th>
             <th rowspan="2" style="width: 10%;">Due Date</th>
             <th rowspan="2" style="width: 10%;">Remark</th>
             <th rowspan="2" style="width: 8%;">Criticality</th>
@@ -333,18 +344,31 @@ export const printService = {
     `
 
     jadwal.forEach((item, index) => {
+      // Support both Excel format and database format
+      const noId = item['No.ID'] || item['No. ID'] || item.no_id || ''
+      const description = item.Description || item.description || ''
+      const calId = item['Calibration Id.'] || item['Calibration ID'] || item.cal_id || ''
+      const parameter = item.Parameter || item.parameter || ''
+      const processRange = item['Process Range'] || item.process_range || ''
+      const rejectError = item['Reject Error Limit'] || item['Reject Error'] || item.reject_error || ''
+      const interval = item.Interval || item.interval || ''
+      const dueDate = item['Due Date'] || item.due_date || ''
+      const remark = item.Remark || item.remark || ''
+      const criticality = item.Criticality || item.criticality || ''
+
       tableContent += `
         <tr>
           <td class="text-center">${index + 1}</td>
-          <td>${item['No.ID'] || ''}</td>
-          <td>${item.Description || ''}</td>
-          <td>${item['Calibration Id.'] || ''}</td>
-          <td>${item.Parameter || ''}</td>
-          <td>${item['Process Range'] || ''}</td>
-          <td>${item['Reject Error Limit'] || ''}</td>
-          <td class="text-center">${this.formatDate(item['Due Date']) || ''}</td>
-          <td>${item.Remark || ''}</td>
-          <td>${item.Criticality || ''}</td>
+          <td>${noId}</td>
+          <td>${description}</td>
+          <td>${calId}</td>
+          <td>${parameter}</td>
+          <td>${processRange}</td>
+          <td>${rejectError}</td>
+          <td class="text-center">${interval}</td>
+          <td class="text-center">${this.formatDate(dueDate)}</td>
+          <td>${remark}</td>
+          <td>${criticality}</td>
         </tr>
       `
     })
@@ -365,7 +389,7 @@ export const printService = {
       'Jadwal Kalibrasi',
       tableContent,
       `${month} ${year}`,
-      false, // INI JADWAL KALIBRASI
+      false // INI JADWAL KALIBRASI
     )
 
     printWindow.document.write(html)
