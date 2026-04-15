@@ -353,7 +353,7 @@ const saveToLogAktivitas = async (row) => {
   
   try {
     // ✅ LANGSUNG PANGGIL API (TANPA LEWAT COMPOSABLE)
-    await logAktivitasApi.createLog({
+    const response = await logAktivitasApi.createLog({
       no_id: row['No.ID'],
       cal_id: row['Calibration Id.'],
       jenis: 'Kalibrasi',
@@ -361,10 +361,11 @@ const saveToLogAktivitas = async (row) => {
       petugas: row.pic,
       keterangan: row.ket
     })
-    
+
     // ✅ UPDATE STATUS LANGSUNG DI UI (TANPA REFRESH)
     row.status = 'Selesai'
-    
+    row.log_no = response.data?.no || response.data?.log_no || null
+
     Swal.fire({
       icon: 'success',
       title: 'Berhasil!',

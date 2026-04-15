@@ -30,7 +30,7 @@ const {
   importPreview,
   showPreview,
   importMode,
-  hasBlockingErrors,
+  hasBlockingErrors: hasBlockingErrorsFromImport,
   downloadJadwalKalibrasiTemplate,
   exportJadwalKalibrasi,
   parseImportFile,
@@ -59,10 +59,29 @@ const handleFileChange = async (e) => {
   await parseImportFile(file, 'jadwalKalibrasi')
 }
 
+// ✅ Computed: daftar no_id yang tidak terdaftar di Daftar Alat (untuk display di error list)
+const unregisteredNoIds = computed(() => {
+  if (!importPreview.value.length) return []
+  return [...new Set(
+    importPreview.value
+      .filter(row => {
+        if (!row.no_id) return true
+        return !(daftarAlat.value || []).some(t => String(t.no_id) === String(row.no_id))
+      })
+      .map(row => row.no_id)
+      .filter(Boolean)
+  )]
+})
+
+const hasImportBlockingErrors = computed(() => {
+  const realErrors = importErrors.value.some(e => !String(e).startsWith('⚠️'))
+  return realErrors || unregisteredNoIds.value.length > 0
+})
+
 const confirmImport = async () => {
-  // Cek langsung — jangan bergantung pada hasBlockingErrors yang mungkin tidak reaktif
-  const hasRealErrors = importErrors.value.some(e => !String(e).startsWith('⚠️'))
-  if (!importPreview.value.length || hasRealErrors) return
+  // Cek error dari import + unregistered no_id
+  if (!importPreview.value.length || hasImportBlockingErrors.value) return
+
   importing.value = true
 
   try {
@@ -263,6 +282,8 @@ const editingJadwal = ref(getEmptyJadwal())
 // Searchable No.ID dropdown
 const noIdSearch = ref('')
 const showNoIdDropdown = ref(false)
+const noIdValidationState = ref({ isValid: true, message: '' }) // ✅ State untuk validasi
+
 const filteredDaftarAlat = computed(() => {
   if (!noIdSearch.value) return daftarAlat.value || []
   const q = noIdSearch.value.toLowerCase()
@@ -270,14 +291,51 @@ const filteredDaftarAlat = computed(() => {
     t.no_id?.toLowerCase().includes(q) || t.description?.toLowerCase().includes(q)
   )
 })
+
+// ✅ Watch untuk validasi no_id secara real-time
+watch(
+  () => editingJadwal.value.no_id,
+  (newNoId) => {
+    if (!newNoId) {
+      noIdValidationState.value = { isValid: true, message: '' }
+      editingJadwal.value.description = ''
+      return
+    }
+    const found = (daftarAlat.value || []).find((t) => String(t.no_id) === String(newNoId))
+    if (found) {
+      noIdValidationState.value = { isValid: true, message: '' }
+      editingJadwal.value.description = found.description || ''
+    } else {
+      // ✅ No.ID tidak ditemukan di daftar alat
+      noIdValidationState.value = {
+        isValid: false,
+        message: `No.ID "${newNoId}" tidak terdaftar di Daftar Alat`
+      }
+      editingJadwal.value.description = ''
+    }
+  }
+)
 const selectNoId = (noId) => {
   editingJadwal.value.no_id = noId
   noIdSearch.value = noId
   showNoIdDropdown.value = false
 }
+
 // Sync search text saat modal dibuka
 watch(isModalOpen, (val) => {
-  if (val) noIdSearch.value = editingJadwal.value.no_id || ''
+  if (val) {
+    noIdSearch.value = editingJadwal.value.no_id || ''
+    // Reset validation state saat modal dibuka
+    if (editingJadwal.value.no_id) {
+      const found = (daftarAlat.value || []).find((t) => String(t.no_id) === String(editingJadwal.value.no_id))
+      noIdValidationState.value = {
+        isValid: !!found,
+        message: found ? '' : `No.ID "${editingJadwal.value.no_id}" tidak terdaftar di Daftar Alat`
+      }
+    } else {
+      noIdValidationState.value = { isValid: true, message: '' }
+    }
+  }
 })
 
 // Computed untuk judul modal
@@ -295,20 +353,22 @@ const documentRefCalibration = computed(() => {
   return config.value.documentRefCalibration
 })
 
-// Isi description otomatis ketika user memilih no_id dari daftarAlat
-watch(
-  () => editingJadwal.value.no_id,
-  (newNoId) => {
-    if (!newNoId) {
-      editingJadwal.value.description = ''
-      return
-    }
-    const found = (daftarAlat.value || []).find((t) => String(t.no_id) === String(newNoId))
-    if (found) {
-      editingJadwal.value.description = found.description || ''
+// Sync search text saat modal dibuka
+watch(isModalOpen, (val) => {
+  if (val) {
+    noIdSearch.value = editingJadwal.value.no_id || ''
+    // Reset validation state saat modal dibuka
+    if (editingJadwal.value.no_id) {
+      const found = (daftarAlat.value || []).find((t) => String(t.no_id) === String(editingJadwal.value.no_id))
+      noIdValidationState.value = {
+        isValid: !!found,
+        message: found ? '' : `No.ID "${editingJadwal.value.no_id}" tidak terdaftar di Daftar Alat`
+      }
+    } else {
+      noIdValidationState.value = { isValid: true, message: '' }
     }
   }
-)
+})
 
 const refresh = () => fetchList()
 
@@ -396,6 +456,21 @@ const fixEncoding = (text) => {
 
 // ✅ Fungsi Simpan (Create/Update)
 const saveEditingJadwal = async () => {
+  // ✅ Validasi client-side: no_id harus ada di daftar alat
+  if (editingJadwal.value.no_id) {
+    const found = (daftarAlat.value || []).find((t) => String(t.no_id) === String(editingJadwal.value.no_id))
+    if (!found) {
+      Swal.fire({
+        icon: 'error',
+        title: 'Validasi Gagal!',
+        html: `No.ID "<strong>${editingJadwal.value.no_id}</strong>" tidak terdaftar di Daftar Alat.<br><br>` +
+              `Silakan daftarkan alat terlebih dahulu di menu <strong>Daftar Alat</strong>.`,
+        confirmButtonText: 'OK'
+      })
+      return
+    }
+  }
+
   try {
     await saveJadwal(editingJadwal.value)
     closeModal()
@@ -749,10 +824,13 @@ onMounted(async () => {
               />
             </div>
 
-            <div v-if="importErrors.length" class="alert alert-danger">
+            <div v-if="importErrors.length || unregisteredNoIds.length" class="alert alert-danger">
               <strong>Ditemukan error:</strong>
               <ul class="mb-0 mt-1">
                 <li v-for="(err, i) in importErrors" :key="i">{{ err }}</li>
+                <li v-for="(noId, i) in unregisteredNoIds" :key="`noid-${i}`">
+                  No.ID "<strong>{{ noId }}</strong>" tidak terdaftar di Daftar Alat
+                </li>
               </ul>
             </div>
 
@@ -835,13 +913,22 @@ onMounted(async () => {
                   <div style="position: relative;">
                     <input
                       v-model="noIdSearch"
+                      @input="editingJadwal.no_id = noIdSearch"
                       type="text"
                       class="form-control"
+                      :class="{ 'is-invalid': !noIdValidationState.isValid && noIdSearch, 'is-valid': noIdValidationState.isValid && noIdSearch }"
                       placeholder="Ketik untuk cari No.ID..."
                       @focus="showNoIdDropdown = true"
                       @blur="setTimeout(() => showNoIdDropdown = false, 200)"
                       autocomplete="off"
                     />
+                    <!-- ✅ Validasi indicator -->
+                    <div v-if="!noIdValidationState.isValid && noIdSearch" class="invalid-feedback d-block">
+                      <i class="fas fa-exclamation-circle mr-1"></i>{{ noIdValidationState.message }}
+                    </div>
+                    <div v-if="noIdSearch && filteredDaftarAlat.length === 0 && noIdValidationState.isValid === false" class="alert alert-danger py-1 px-2 mt-2 mb-0 small">
+                      <i class="fas fa-times-circle mr-1"></i><strong>Peringatan:</strong> No.ID tidak ditemukan di Daftar Alat
+                    </div>
                     <div
                       v-if="showNoIdDropdown && filteredDaftarAlat.length"
                       style="position:absolute;z-index:1050;width:100%;max-height:200px;overflow-y:auto;background:#fff;border:1px solid #ced4da;border-radius:0 0 4px 4px;box-shadow:0 4px 8px rgba(0,0,0,.1);"
