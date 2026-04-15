@@ -42,6 +42,34 @@ const fixEncoding = (text) => {
   return fixed
 }
 
+/**
+ * Helper: Validasi apakah no_id ada di tabel daftaralat
+ */
+async function validateNoId(no_id) {
+  if (!no_id) {
+    const err = new Error('No.ID wajib diisi')
+    err.isValidationError = true
+    throw err
+  }
+
+  const { data, error } = await supabase
+    .from('daftaralat')
+    .select('no_id')
+    .eq('no_id', no_id)
+    .maybeSingle()
+
+  if (error) throw error
+
+  if (!data) {
+    const err = new Error(`No.ID "${no_id}" tidak terdaftar di Daftar Alat. Silakan daftarkan terlebih dahulu di menu Daftar Alat.`)
+    err.isValidationError = true
+    err.isNoIdNotFound = true
+    throw err
+  }
+
+  return data
+}
+
 export const jadwalKalibrasiApi = {
   /**
    * GET: Fetch all jadwal kalibrasi (excludes obsolete equipment)
@@ -165,6 +193,34 @@ export const jadwalKalibrasiApi = {
    * mode: 'upsert' = tambah+update, 'insert_only' = hanya data baru saja
    */
   async upsertBatch(jadwals, mode = 'upsert') {
+    // ✅ VALIDASI: Semua no_id harus ada di daftaralat
+    const noIdsToValidate = [...new Set(jadwals.map(j => j.no_id).filter(Boolean))]
+    
+    if (noIdsToValidate.length > 0) {
+      const { data: validNoIds, error } = await supabase
+        .from('daftaralat')
+        .select('no_id')
+        .in('no_id', noIdsToValidate)
+      
+      if (error) throw error
+
+      const validNoIdSet = new Set(validNoIds.map(r => r.no_id))
+      const invalidNoIds = noIdsToValidate.filter(noId => !validNoIdSet.has(noId))
+
+      if (invalidNoIds.length > 0) {
+        const errorList = invalidNoIds.slice(0, 10).join(', ')
+        const errorMessage = invalidNoIds.length > 10 
+          ? `No.ID berikut tidak terdaftar di Daftar Alat: ${errorList} ... dan ${invalidNoIds.length - 10} lainnya. Silakan daftarkan terlebih dahulu.`
+          : `No.ID berikut tidak terdaftar di Daftar Alat: ${errorList}. Silakan daftarkan terlebih dahulu.`
+        
+        const err = new Error(errorMessage)
+        err.isValidationError = true
+        err.isNoIdNotFound = true
+        err.invalidNoIds = invalidNoIds
+        throw err
+      }
+    }
+
     const calIds = jadwals.map(j => j.cal_id).filter(Boolean)
 
     const existingMap = {}
@@ -361,6 +417,9 @@ export const jadwalKalibrasiApi = {
    */
   async create(jadwal) {
     try {
+      // ✅ VALIDASI: no_id harus ada di daftaralat
+      await validateNoId(jadwal.no_id)
+
       const jadwalData = {
         no_id: jadwal.no_id,
         description: jadwal.description,
@@ -433,6 +492,11 @@ export const jadwalKalibrasiApi = {
    */
   async update(no, jadwal) {
     try {
+      // ✅ VALIDASI: no_id harus ada di daftaralat (jika no_id berubah)
+      if (jadwal.no_id) {
+        await validateNoId(jadwal.no_id)
+      }
+
       const jadwalData = {
         no_id: jadwal.no_id,
         description: jadwal.description,
