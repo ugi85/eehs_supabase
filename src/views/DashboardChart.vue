@@ -62,7 +62,7 @@
               <div class="inner">
                 <h3>{{ currentMonthRemaining || 0 }}</h3>
                 <p>
-                  OverDue - <strong>{{ currentMonth }}</strong>
+                  Sisa aktivitas - <strong>{{ currentMonth }}</strong>
                 </p>
 
 

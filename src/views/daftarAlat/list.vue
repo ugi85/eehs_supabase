@@ -233,6 +233,7 @@ const getEmptyTool = () => ({
   type_model: '',
   sn: '',
   year: '',
+  area: '',
   crit_product: '',
   crit_process: '',
   crit_safety: '',
@@ -288,6 +289,7 @@ const openEditModal = (tool) => {
     type_model: tool.type_model || '',
     sn: tool.sn || '',
     year: tool.year || '',
+    area: tool.area || '',
     crit_product: tool.crit_product || '',
     crit_process: tool.crit_process || '',
     crit_safety: tool.crit_safety || '',
@@ -509,6 +511,7 @@ onMounted(async () => {
                     <th colspan="4" class="text-center">Criticality (Y/N)</th>
                     <th colspan="4" class="text-center">PM</th>
                     <th colspan="2" class="text-center">Calibration</th>
+                    <th rowspan="2" class="align-middle">Area</th>
                     <th rowspan="2" class="align-middle">Location</th>
                     <!-- <th colspan="2" class="text-center">Status</th> -->
                     <th rowspan="2" class="align-middle text-center">Aksi</th>
@@ -561,6 +564,7 @@ onMounted(async () => {
                     <td>{{ tool.pm_internal_external || '—' }}</td>
                     <td>{{ tool.calib_yesno || '—' }}</td>
                     <td>{{ tool.calib_schedule?.trim() || '—' }}</td>
+                    <td>{{ tool.area || '—' }}</td>
                     <td>{{ tool.location || '—' }}</td>
                     <!-- <td>
                       <span v-if="tool.status_pm === 'Selesai'" class="badge badge-success">Selesai</span>
@@ -746,6 +750,10 @@ onMounted(async () => {
                 <div class="form-group">
                   <label>Year</label>
                   <input v-model="editingTool.year" type="text" class="form-control" />
+                </div>
+                <div class="form-group">
+                  <label>Area</label>
+                  <input v-model="editingTool.area" type="text" class="form-control" />
                 </div>
                 <div class="form-group">
                   <label>Location</label>
