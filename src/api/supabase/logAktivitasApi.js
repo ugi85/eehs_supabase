@@ -466,23 +466,38 @@ export const logAktivitasApi = {
       const parseIntervalMonths = (intField) => {
         if (!intField) return 12 // default yearly
         const str = String(intField).trim().toLowerCase()
-        // Angka langsung
-        const num = parseInt(str)
-        if (!isNaN(num) && num > 0) return num
         // "2 yearly" → 24, "3 yearly" → 36, dst
         const multiYearMatch = str.match(/^(\d+)\s*year/)
         if (multiYearMatch) return parseInt(multiYearMatch[1]) * 12
-        // "yearly" → 12
-        if (str.includes('year')) return 12
         // "6 monthly" → 6
         const multiMonthMatch = str.match(/^(\d+)\s*month/)
         if (multiMonthMatch) return parseInt(multiMonthMatch[1])
+        // "yearly" → 12
+        if (str.includes('year')) return 12
+        // Angka langsung
+        const num = parseInt(str)
+        if (!isNaN(num) && num > 0) return num
         return 12
       }
 
       // Filter by month + interval year check
       const monthShort = month.substring(0, 3).toLowerCase()
       const selectedYear_int = parseInt(year)
+
+      // Fetch last execution per calibration_id untuk interval check
+      const { data: allKalLog } = await supabase
+        .from('logaktivitas')
+        .select('calibration_id, execute_date')
+        .eq('jenis', 'Kalibrasi')
+        .order('execute_date', { ascending: false })
+
+      // Map: calibration_id → last execute_date
+      const lastExecMap = {}
+      ;(allKalLog || []).forEach(l => {
+        if (l.calibration_id && !lastExecMap[l.calibration_id]) {
+          lastExecMap[l.calibration_id] = l.execute_date
+        }
+      })
 
       const filtered = (kalibrasiData || []).filter(item => {
         if (!isPastPeriod && alatStatusMap[item.no_id] === 'obsolete') return false
@@ -523,21 +538,6 @@ export const logAktivitasApi = {
         console.error('[Log API] Error fetching log:', logError)
         throw logError
       }
-
-      // Fetch last execution per calibration_id untuk interval check
-      const { data: allKalLog } = await supabase
-        .from('logaktivitas')
-        .select('calibration_id, execute_date')
-        .eq('jenis', 'Kalibrasi')
-        .order('execute_date', { ascending: false })
-
-      // Map: calibration_id → last execute_date
-      const lastExecMap = {}
-      ;(allKalLog || []).forEach(l => {
-        if (l.calibration_id && !lastExecMap[l.calibration_id]) {
-          lastExecMap[l.calibration_id] = l.execute_date
-        }
-      })
 
       // Helper untuk decode dan fix encoding issues
       const fixEncoding = (text) => {
@@ -675,11 +675,11 @@ export const logAktivitasApi = {
       const isPastPeriod = selectedDate < new Date(now.getFullYear(), now.getMonth(), 1)
 
       // Filter by month - check schedule, 6_monthly, and yearly fields
-      // Periode lampau: tampilkan semua termasuk obsolete (history)
-      // Periode sekarang/mendatang: skip obsolete
+      // CATATAN: Tampilkan semua equipment yang memiliki jadwal PM di bulan ini,
+      // termasuk yang sudah obsolete (karena mungkin masih perlu dicatat historisnya)
       const monthShort = month.substring(0, 3).toLowerCase()
       const filtered = (alatData || []).filter(item => {
-        if (!isPastPeriod && item.status === 'obsolete') return false
+        // Tidak ada filter obsolete — tampilkan semua
         // Hanya cek 6_monthly dan yearly — schedule adalah Calibration Schedule, bukan PM schedule
         
         // Check 6_monthly field (for 6-monthly PM)
