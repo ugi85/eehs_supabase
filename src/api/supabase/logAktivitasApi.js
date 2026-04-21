@@ -466,23 +466,38 @@ export const logAktivitasApi = {
       const parseIntervalMonths = (intField) => {
         if (!intField) return 12 // default yearly
         const str = String(intField).trim().toLowerCase()
-        // Angka langsung
-        const num = parseInt(str)
-        if (!isNaN(num) && num > 0) return num
         // "2 yearly" → 24, "3 yearly" → 36, dst
         const multiYearMatch = str.match(/^(\d+)\s*year/)
         if (multiYearMatch) return parseInt(multiYearMatch[1]) * 12
-        // "yearly" → 12
-        if (str.includes('year')) return 12
         // "6 monthly" → 6
         const multiMonthMatch = str.match(/^(\d+)\s*month/)
         if (multiMonthMatch) return parseInt(multiMonthMatch[1])
+        // "yearly" → 12
+        if (str.includes('year')) return 12
+        // Angka langsung
+        const num = parseInt(str)
+        if (!isNaN(num) && num > 0) return num
         return 12
       }
 
       // Filter by month + interval year check
       const monthShort = month.substring(0, 3).toLowerCase()
       const selectedYear_int = parseInt(year)
+
+      // Fetch last execution per calibration_id untuk interval check
+      const { data: allKalLog } = await supabase
+        .from('logaktivitas')
+        .select('calibration_id, execute_date')
+        .eq('jenis', 'Kalibrasi')
+        .order('execute_date', { ascending: false })
+
+      // Map: calibration_id → last execute_date
+      const lastExecMap = {}
+      ;(allKalLog || []).forEach(l => {
+        if (l.calibration_id && !lastExecMap[l.calibration_id]) {
+          lastExecMap[l.calibration_id] = l.execute_date
+        }
+      })
 
       const filtered = (kalibrasiData || []).filter(item => {
         if (!isPastPeriod && alatStatusMap[item.no_id] === 'obsolete') return false
@@ -523,21 +538,6 @@ export const logAktivitasApi = {
         console.error('[Log API] Error fetching log:', logError)
         throw logError
       }
-
-      // Fetch last execution per calibration_id untuk interval check
-      const { data: allKalLog } = await supabase
-        .from('logaktivitas')
-        .select('calibration_id, execute_date')
-        .eq('jenis', 'Kalibrasi')
-        .order('execute_date', { ascending: false })
-
-      // Map: calibration_id → last execute_date
-      const lastExecMap = {}
-      ;(allKalLog || []).forEach(l => {
-        if (l.calibration_id && !lastExecMap[l.calibration_id]) {
-          lastExecMap[l.calibration_id] = l.execute_date
-        }
-      })
 
       // Helper untuk decode dan fix encoding issues
       const fixEncoding = (text) => {
