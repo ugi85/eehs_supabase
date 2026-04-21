@@ -156,7 +156,7 @@ export function useExcelImport() {
           // Duplikat dalam file — baris terakhir yang menang (user biasanya update data di baris bawah)
           const existingIdx = keyMap.get(keyVal)
           mapped[existingIdx] = obj  // Replace dengan data terbaru
-          warnings.push(`Baris ${rowNum}: ${keyLabel} "${keyVal}" duplikat — data baris ini MENGGANTIKAN baris sebelumnya`)
+          warnings.push(`Baris ${rowNum}: ${keyLabel} "${keyVal}" duplikat — data ini MENGGANTIKAN baris sebelumnya`)
         } else {
           if (keyVal) keyMap.set(keyVal, mapped.length)
           mapped.push(obj)

@@ -675,11 +675,11 @@ export const logAktivitasApi = {
       const isPastPeriod = selectedDate < new Date(now.getFullYear(), now.getMonth(), 1)
 
       // Filter by month - check schedule, 6_monthly, and yearly fields
-      // Periode lampau: tampilkan semua termasuk obsolete (history)
-      // Periode sekarang/mendatang: skip obsolete
+      // CATATAN: Tampilkan semua equipment yang memiliki jadwal PM di bulan ini,
+      // termasuk yang sudah obsolete (karena mungkin masih perlu dicatat historisnya)
       const monthShort = month.substring(0, 3).toLowerCase()
       const filtered = (alatData || []).filter(item => {
-        if (!isPastPeriod && item.status === 'obsolete') return false
+        // Tidak ada filter obsolete — tampilkan semua
         // Hanya cek 6_monthly dan yearly — schedule adalah Calibration Schedule, bukan PM schedule
         
         // Check 6_monthly field (for 6-monthly PM)
