@@ -36,7 +36,7 @@ export function useDashboard() {
           label: 'Kalibrasi',
           data: labels.map(month => {
             const item = kalibrasiMonthly.value.find(m => m.month === month)
-            return item ? item.count : 0
+            return item ? (item.count || 0) : 0
           }),
           borderColor: '#4285F4',
           backgroundColor: 'rgba(66, 133, 244, 0.1)',
@@ -48,7 +48,7 @@ export function useDashboard() {
           label: 'Preventive Maintenance',
           data: labels.map(month => {
             const item = pmMonthly.value.find(m => m.month === month)
-            return item ? item.count : 0
+            return item ? (item.count || 0) : 0
           }),
           borderColor: '#34A853',
           backgroundColor: 'rgba(52, 168, 83, 0.1)',
@@ -97,6 +97,7 @@ export function useDashboard() {
       const now = Date.now()
       
       if (parsed && now - parsed.timestamp < CACHE_DURATION) {
+        console.log('[Dashboard] Using cached data')
         return parsed
       }
       
@@ -122,15 +123,17 @@ export function useDashboard() {
 
   // ✅ FETCH DENGAN CACHE + BACKGROUND UPDATE
   const fetchDashboardData = async (year = selectedYear.value, useCache = true) => {
+    console.log(`[Dashboard] fetchDashboardData called: year=${year}, useCache=${useCache}`)
+    
     if (useCache) {
       const cachedData = getFromCache()
       if (cachedData) {
         // Set state dari cache (INSTANT!)
-        totalEquipment.value = cachedData.totalEquipment
-        totalKalibrasi.value = cachedData.totalKalibrasi
-        totalPM.value = cachedData.totalPM
-        kalibrasiMonthly.value = cachedData.kalibrasiMonthly
-        pmMonthly.value = cachedData.pmMonthly
+        totalEquipment.value = cachedData.totalEquipment || 0
+        totalKalibrasi.value = cachedData.totalKalibrasi || 0
+        totalPM.value = cachedData.totalPM || 0
+        kalibrasiMonthly.value = cachedData.kalibrasiMonthly || []
+        pmMonthly.value = cachedData.pmMonthly || []
         selectedYear.value = cachedData.year || year
         
         // Update di background
@@ -148,34 +151,33 @@ export function useDashboard() {
     error.value = null
     
     try {
-      const [
-        equipmentData,
-        schedulesData
-      ] = await Promise.all([
+      const [equipmentData, schedulesData] = await Promise.all([
         logAktivitasApi.getTotalDaftarAlat(),
         logAktivitasApi.getTotalSchedules(year)
       ])
       
-      totalEquipment.value = equipmentData.total
-      totalKalibrasi.value = schedulesData.totalKalibrasi
-      totalPM.value = schedulesData.totalPM
-      kalibrasiMonthly.value = schedulesData.kalibrasiMonthly
-      pmMonthly.value = schedulesData.pmMonthly
+      console.log('[Dashboard] API response:', { equipmentData, schedulesData })
+      
+      totalEquipment.value = equipmentData?.total || 0
+      totalKalibrasi.value = schedulesData?.totalKalibrasi || 0
+      totalPM.value = schedulesData?.totalPM || 0
+      kalibrasiMonthly.value = schedulesData?.kalibrasiMonthly || []
+      pmMonthly.value = schedulesData?.pmMonthly || []
       selectedYear.value = year
       
       // Simpan ke cache
       saveToCache({
-        totalEquipment: equipmentData.total,
-        totalKalibrasi: schedulesData.totalKalibrasi,
-        totalPM: schedulesData.totalPM,
-        kalibrasiMonthly: schedulesData.kalibrasiMonthly,
-        pmMonthly: schedulesData.pmMonthly,
+        totalEquipment: totalEquipment.value,
+        totalKalibrasi: totalKalibrasi.value,
+        totalPM: totalPM.value,
+        kalibrasiMonthly: kalibrasiMonthly.value,
+        pmMonthly: pmMonthly.value,
         year
       })
       
       isInitialized.value = true
     } catch (err) {
-      console.error('Error fetching dashboard ', err)
+      console.error('Error fetching dashboard:', err)
       error.value = err.message || 'Gagal memuat data dashboard'
       throw err
     } finally {
@@ -186,27 +188,24 @@ export function useDashboard() {
   // ✅ REFRESH DATA TANPA CACHE (UNTUK BACKGROUND UPDATE)
   const refreshDashboardData = async (year = selectedYear.value) => {
     try {
-      const [
-        equipmentData,
-        schedulesData
-      ] = await Promise.all([
+      const [equipmentData, schedulesData] = await Promise.all([
         logAktivitasApi.getTotalDaftarAlat(),
         logAktivitasApi.getTotalSchedules(year)
       ])
       
-      totalEquipment.value = equipmentData.total
-      totalKalibrasi.value = schedulesData.totalKalibrasi
-      totalPM.value = schedulesData.totalPM
-      kalibrasiMonthly.value = schedulesData.kalibrasiMonthly
-      pmMonthly.value = schedulesData.pmMonthly
+      totalEquipment.value = equipmentData?.total || 0
+      totalKalibrasi.value = schedulesData?.totalKalibrasi || 0
+      totalPM.value = schedulesData?.totalPM || 0
+      kalibrasiMonthly.value = schedulesData?.kalibrasiMonthly || []
+      pmMonthly.value = schedulesData?.pmMonthly || []
       
       // Update cache
       saveToCache({
-        totalEquipment: equipmentData.total,
-        totalKalibrasi: schedulesData.totalKalibrasi,
-        totalPM: schedulesData.totalPM,
-        kalibrasiMonthly: schedulesData.kalibrasiMonthly,
-        pmMonthly: schedulesData.pmMonthly,
+        totalEquipment: totalEquipment.value,
+        totalKalibrasi: totalKalibrasi.value,
+        totalPM: totalPM.value,
+        kalibrasiMonthly: kalibrasiMonthly.value,
+        pmMonthly: pmMonthly.value,
         year
       })
       
@@ -260,32 +259,63 @@ export function useDashboard() {
     return monthNames[new Date().getMonth()]
   })
 
-  // ✅ SISA JADWAL BULAN SAAT INI (TOTAL - EXECUTED)
+  // ✅ SISA JADWAL BULAN SAAT INI (TOTAL PM + KALIBRASI YANG BELUM DILAKSANAKAN)
   const currentMonthRemaining = computed(() => {
     const currentMonthName = currentMonth.value
 
     const kalibrasiItem = kalibrasiMonthly.value.find(m => m.month === currentMonthName)
     const pmItem = pmMonthly.value.find(m => m.month === currentMonthName)
 
-    const kalibrasiRemaining = kalibrasiItem ? (kalibrasiItem.count - kalibrasiItem.executed) : 0
-    const pmRemaining = pmItem ? (pmItem.count - pmItem.executed) : 0
+    // Hitung sisa dengan Math.max(0, ...) agar tidak negatif
+    const kalibrasiRemaining = kalibrasiItem 
+      ? Math.max(0, (kalibrasiItem.count || 0) - (kalibrasiItem.executed || 0)) 
+      : 0
+    const pmRemaining = pmItem 
+      ? Math.max(0, (pmItem.count || 0) - (pmItem.executed || 0)) 
+      : 0
 
-    return kalibrasiRemaining + pmRemaining
+    // ✅ TOTAL: Sisa PM + Sisa Kalibrasi
+    const total = kalibrasiRemaining + pmRemaining
+    console.log(`[Dashboard] currentMonthRemaining: ${total} (PM: ${pmRemaining}, Kal: ${kalibrasiRemaining})`)
+    
+    return total
   })
 
   // ✅ STATISTIK BULAN SAAT INI (UNTUK PIE CHART)
   const currentMonthStats = computed(() => {
     const currentMonthName = currentMonth.value
-
     const kalibrasiItem = kalibrasiMonthly.value.find(m => m.month === currentMonthName)
     const pmItem = pmMonthly.value.find(m => m.month === currentMonthName)
 
     return {
-      kalibrasiCount: kalibrasiItem ? kalibrasiItem.count : 0,
-      kalibrasiExecuted: kalibrasiItem ? kalibrasiItem.executed : 0,
-      pmCount: pmItem ? pmItem.count : 0,
-      pmExecuted: pmItem ? pmItem.executed : 0
+      month: currentMonthName,
+      kalibrasiCount: kalibrasiItem?.count || 0,
+      kalibrasiExecuted: kalibrasiItem?.executed || 0,
+      pmCount: pmItem?.count || 0,
+      pmExecuted: pmItem?.executed || 0
     }
+  })
+
+  // ✅ HELPER: Hitung persentase dengan batas maksimal 100%
+  const calculatePercentage = (executed, count) => {
+    if (!count || count === 0) return 0
+    const pct = Math.round((executed / count) * 100)
+    return Math.min(100, pct) // ✅ Batasi maksimal 100%
+  }
+
+  // ✅ COMPUTED: Data tabel dengan persentase yang sudah dibatasi
+  const kalibrasiTableData = computed(() => {
+    return kalibrasiMonthly.value.map(item => ({
+      ...item,
+      executedPercentage: calculatePercentage(item.executed, item.count)
+    }))
+  })
+
+  const pmTableData = computed(() => {
+    return pmMonthly.value.map(item => ({
+      ...item,
+      executedPercentage: calculatePercentage(item.executed, item.count)
+    }))
   })
 
   return {
@@ -306,12 +336,15 @@ export function useDashboard() {
     currentMonth,
     currentMonthRemaining,
     currentMonthStats,
+    kalibrasiTableData,    // ✅ Untuk tabel dengan persentase capped
+    pmTableData,           // ✅ Untuk tabel dengan persentase capped
 
     // Methods
     fetchDashboardData,
     refreshData,
     changeYear,
     startAutoRefresh,
-    stopAutoRefresh
+    stopAutoRefresh,
+    calculatePercentage    // ✅ Export helper jika dibutuhkan di view
   }
 }
