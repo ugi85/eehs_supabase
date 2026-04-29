@@ -2,6 +2,9 @@
 import { ref, computed, nextTick } from 'vue'
 import { logAktivitasApi } from '@/api'
 
+// ✅ KONSTANTA: Cache key dashboard (harus sama dengan yang di useDashboard.js)
+const DASHBOARD_CACHE_KEY = 'dashboard_data_cache'
+
 export function useLogAktivitas() {
 
   // STATE
@@ -192,12 +195,32 @@ export function useLogAktivitas() {
 
   // ── CRUD ──────────────────────────────────────────────────────────────────
 
+  // ✅ HELPER: Sync Dashboard Cache
+  const syncDashboard = () => {
+    try {
+      localStorage.removeItem(DASHBOARD_CACHE_KEY)
+      // Optional: dispatch event jika ada komponen lain yang listen
+      window.dispatchEvent(new CustomEvent('dashboard:needs-refresh', { 
+        detail: { year: selectedYear.value } 
+      }))
+      console.log('🔄 Dashboard cache cleared')
+    } catch (e) {
+      console.warn('Failed to clear dashboard cache:', e)
+    }
+  }
+
   async function createLog(logData) {
     isSaving.value = true
     loading.value = true
     try {
       const response = await logAktivitasApi.createLog({ ...logData, petugas: logData.petugas || 'Unknown' })
-      await fetchAllLogs()
+      
+      // ✅ PERBAIKAN: Gunakan fetchData() agar sesuai filter aktif (bukan fetchAllLogs)
+      await fetchData()
+      
+      // ✅ SYNC: Clear dashboard cache agar angka update realtime
+      syncDashboard()
+      
       closeFormDialog()
       return response
     } catch (error) {
@@ -213,7 +236,11 @@ export function useLogAktivitas() {
     loading.value = true
     try {
       const response = await logAktivitasApi.updateLog(logData)
-      await fetchAllLogs()
+      
+      // ✅ PERBAIKAN: Fetch sesuai filter aktif + sync dashboard
+      await fetchData()
+      syncDashboard()
+      
       closeFormDialog()
       return response
     } catch (error) {
@@ -228,7 +255,11 @@ export function useLogAktivitas() {
     loading.value = true
     try {
       await logAktivitasApi.delete(no)
-      await fetchAllLogs()
+      
+      // ✅ PERBAIKAN: Fetch sesuai filter aktif + sync dashboard
+      await fetchData()
+      syncDashboard()
+      
       return true
     } catch (error) {
       return false
@@ -241,7 +272,11 @@ export function useLogAktivitas() {
     loading.value = true
     try {
       const result = await logAktivitasApi.bulkDelete(ids)
-      await fetchAllLogs(true)
+      
+      // ✅ PERBAIKAN: Fetch sesuai filter aktif + sync dashboard
+      await fetchData()
+      syncDashboard()
+      
       return result
     } catch (error) {
       throw error
