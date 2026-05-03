@@ -181,163 +181,217 @@ export const logAktivitasApi = {
     }
   },
   /**
-   * GET: Total Schedules (untuk dashboard) - VERSI FINAL FIX
+   * GET: Total Schedules (untuk dashboard) - VERSI FINAL FIX dengan Versioning
    */
   async getTotalSchedules(year = new Date().getFullYear()) {
     try {
       console.log(`[API] getTotalSchedules called for year: ${year}`)
-      
-      // Fetch semua data yang dibutuhkan
-      const [kalibrasiRes, alatRes, logRes] = await Promise.all([
-        supabase.from('kalibrasi').select('*'),
-        supabase.from('daftaralat').select('*'),
-        supabase.from('logaktivitas').select('*')
-      ])
-
-      if (kalibrasiRes.error) throw kalibrasiRes.error
-      if (alatRes.error) throw alatRes.error
-      if (logRes.error) throw logRes.error
-
-      const kalibrasiData = kalibrasiRes.data || []
-      const alatData = alatRes.data || []
-      const allLogData = logRes.data || []
-
-      console.log(`[API] Fetched: ${kalibrasiData.length} kalibrasi, ${alatData.length} alat, ${allLogData.length} logs`)
 
       const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
-      
-      // Build maps
-      const statusMap = {}
-      ;(alatData || []).forEach(d => { statusMap[d.no_id] = d.status })
 
-      const lastExecMap = {}
-      ;(allLogData || []).filter(l => l.jenis === 'Kalibrasi').forEach(l => {
-        if (l.calibration_id && !lastExecMap[l.calibration_id]) {
-          lastExecMap[l.calibration_id] = l.execute_date
-        }
+      // ✅ VERSIONING: Get appropriate version for each month
+      const versionPromises = months.map((_, index) => this.getVersionForPeriod(index, parseInt(year)))
+      const monthVersions = await Promise.all(versionPromises)
+
+      console.log('[API] Month versions:', monthVersions)
+
+      // ✅ Fetch data with versioning - each month uses its appropriate version
+      const fetchPromises = months.map((_, index) => {
+        const versionId = monthVersions[index]
+        return Promise.all([
+          this.getDataForVersion('kalibrasi', versionId),
+          this.getDataForVersion('daftaralat', versionId),
+          this.getDataForVersion('logaktivitas', versionId)
+        ])
       })
 
-      const parseIntervalMonths = (intField) => {
-        if (!intField) return 12
-        const str = String(intField).trim().toLowerCase()
-        const m1 = str.match(/^(\d+)\s*year/); if (m1) return parseInt(m1[1]) * 12
-        const m2 = str.match(/^(\d+)\s*month/); if (m2) return parseInt(m2[1])
-        if (str.includes('year')) return 12
-        const num = parseInt(str); if (!isNaN(num) && num > 0) return num
-        return 12
-      }
+      const allData = await Promise.all(fetchPromises)
 
-      // ✅ KALIBRASI MONTHLY - FIX: executed hanya hitung log yang match dengan validItems
+      // Process each month with its versioned data
       const kalibrasiMonthly = months.map((month, index) => {
-        const monthShort = month.substring(0, 3).toLowerCase()
-        const isPast = isPastPeriod(index, parseInt(year))
-        const selectedYear_int = parseInt(year)
-
-        // Filter valid items untuk bulan ini
-        const validItems = (kalibrasiData || []).filter(item => {
-          if (!item.due_date || !item.due_date.toLowerCase().includes(monthShort)) return false
-          if (!isPast && statusMap[item.no_id] === 'obsolete') return false
-
-          const intervalMonths = parseIntervalMonths(item.int)
-          if (intervalMonths <= 12) return true // Yearly: selalu tampil
-
-          // Multi-yearly logic
-          const intervalYears = Math.round(intervalMonths / 12)
-          const lastExec = lastExecMap[item.calibration_id]
-          
-          if (!lastExec) return true // Belum pernah: tampil
-
-          const lastYear = new Date(lastExec).getFullYear()
-          const yearsDiff = selectedYear_int - lastYear
-          
-          return yearsDiff > 0 && yearsDiff % intervalYears === 0
-        })
-
-        // ✅ FIX: executed hanya hitung log yang calibration_id-nya ada di validItems
-        const executed = (allLogData || []).filter(item => {
-          if (item.jenis !== 'Kalibrasi' || !item.execute_date) return false
-          try {
-            const executeDate = new Date(item.execute_date)
-            if (executeDate.getMonth() !== index || executeDate.getFullYear() !== selectedYear_int) return false
-            
-            // ✅ Hanya hitung jika calibration_id match dengan validItems
-            return validItems.some(v => v.calibration_id === item.calibration_id || v.no_id === item.no_id)
-          } catch (e) {
-            return false
-          }
-        }).length
-        
-        const count = isPast ? executed : validItems.length
-        const executedPercentage = count > 0 ? Math.min(100, Math.round((executed / count) * 100)) : 0
-
-        return { month, count, executed, executedPercentage }
+        const [kalibrasiData, alatData, allLogData] = allData[index]
+        return this.processMonthlyData(month, index, parseInt(year), kalibrasiData, alatData, allLogData)
       })
 
-           // ✅ PM MONTHLY - HITUNG EXECUTED HANYA UNTUK EQUIPMENT YANG DIJADWALKAN
       const pmMonthly = months.map((month, index) => {
-        const monthShort = month.substring(0, 3).toLowerCase()
-        const isPastPeriodCheck = isPastPeriod(index, parseInt(year))
-
-        // Filter equipment dengan jadwal PM untuk bulan ini
-        const monthData = (alatData || []).filter(item => {
-          if (item.pm_yn !== 'Y') return false
-          if (!isPastPeriodCheck && item.status === 'obsolete') return false
-          if (item['6_monthly'] && item['6_monthly'] !== 'NA' && item['6_monthly'] !== '-') {
-            if (item['6_monthly'].toLowerCase().includes(monthShort)) return true
-          }
-          if (item.yearly && item.yearly !== 'NA' && item.yearly !== '-') {
-            if (item.yearly.toLowerCase().includes(monthShort)) return true
-          }
-          return false
-        })
-
-        // ✅ FIX: Hitung executed HANYA untuk equipment yang ada di monthData
-        const executed = (allLogData || []).filter(item => {
-          if (item.jenis !== 'PM' || !item.execute_date) return false
-          try {
-            const executeDate = new Date(item.execute_date)
-            if (executeDate.getMonth() !== index || executeDate.getFullYear() !== parseInt(year)) return false
-            
-            // ✅ Hanya hitung jika no_id ada di monthData (equipment yang dijadwalkan)
-            return monthData.some(eq => eq.no_id === item.no_id)
-          } catch (e) {
-            return false
-          }
-        }).length
-
-        const count = isPastPeriodCheck ? executed : monthData.length
-        const executedPercentage = count > 0 ? Math.min(100, Math.round((executed / count) * 100)) : 0
-        
-        return { 
-          month, 
-          count, 
-          executed, 
-          executedPercentage
-        }
+        const [kalibrasiData, alatData, allLogData] = allData[index]
+        return this.processPMMonthlyData(month, index, parseInt(year), alatData, allLogData)
       })
 
       const result = {
         success: true,
-        // ✅ FIX: totalKalibrasi = sum of monthly counts (bukan count semua row)
         totalKalibrasi: kalibrasiMonthly.reduce((sum, m) => sum + (m.count || 0), 0),
         totalPM: pmMonthly.reduce((sum, m) => sum + (m.count || 0), 0),
         kalibrasiMonthly,
         pmMonthly
       }
-      
+
       console.log('[API] getTotalSchedules result:', result)
       return result
-      
+
     } catch (error) {
       console.error('[Log Aktivitas API] CRITICAL ERROR getTotalSchedules:', error)
-      return { 
-        success: false, 
-        totalKalibrasi: 0, 
-        totalPM: 0, 
-        kalibrasiMonthly: [], 
+      return {
+        success: false,
+        totalKalibrasi: 0,
+        totalPM: 0,
+        kalibrasiMonthly: [],
         pmMonthly: [],
-        error: error.message 
+        error: error.message
       }
+    }
+  },
+
+  // ✅ Helper: Get version for specific period
+  async getVersionForPeriod(month, year) {
+    const targetDate = new Date(year, month)
+    const now = new Date()
+
+    // If target period is in the past, find the version that was active at end of that month
+    if (targetDate < new Date(now.getFullYear(), now.getMonth(), 1)) {
+      const periodEnd = new Date(year, month + 1, 0) // Last day of target month
+
+      try {
+        const { data, error } = await supabase
+          .from('data_versions')
+          .select('*')
+          .lte('snapshot_date', periodEnd)
+          .order('snapshot_date', { ascending: false })
+          .limit(1)
+
+        if (error) throw error
+        return data?.[0]?.version_id || null
+      } catch (error) {
+        console.warn('[Log Aktivitas API] getVersionForPeriod failed, using latest version:', error.message)
+        return null
+      }
+    }
+
+    // For current month, use latest version (null = latest)
+    return null
+  },
+
+  // ✅ Helper: Get data for specific version
+  async getDataForVersion(table, versionId = null) {
+    let query = supabase.from(table).select('*')
+
+    if (versionId) {
+      query = query.eq('version_id', versionId)
+    }
+
+    const { data, error } = await query
+    if (error) throw error
+    return data || []
+  },
+
+  // ✅ Helper: Process monthly kalibrasi data
+  processMonthlyData(month, index, year, kalibrasiData, alatData, allLogData) {
+    const monthShort = month.substring(0, 3).toLowerCase()
+    const isPast = isPastPeriod(index, year)
+
+    // Build maps
+    const statusMap = {}
+    ;(alatData || []).forEach(d => { statusMap[d.no_id] = d.status })
+
+    const lastExecMap = {}
+    ;(allLogData || []).filter(l => l.jenis === 'Kalibrasi').forEach(l => {
+      if (l.calibration_id && !lastExecMap[l.calibration_id]) {
+        lastExecMap[l.calibration_id] = l.execute_date
+      }
+    })
+
+    const parseIntervalMonths = (intField) => {
+      if (!intField) return 12
+      const str = String(intField).trim().toLowerCase()
+      const m1 = str.match(/^(\d+)\s*year/); if (m1) return parseInt(m1[1]) * 12
+      const m2 = str.match(/^(\d+)\s*month/); if (m2) return parseInt(m2[1])
+      if (str.includes('year')) return 12
+      const num = parseInt(str); if (!isNaN(num) && num > 0) return num
+      return 12
+    }
+
+    // Filter valid items untuk bulan ini
+    const validItems = (kalibrasiData || []).filter(item => {
+      if (!item.due_date || !item.due_date.toLowerCase().includes(monthShort)) return false
+      // ✅ PERBAIKAN: Jangan exclude obsolete di bulan berjalan agar total count tetap konsisten
+      // if (!isPast && statusMap[item.no_id] === 'obsolete') return false
+
+      const intervalMonths = parseIntervalMonths(item.int)
+      if (intervalMonths <= 12) return true // Yearly: selalu tampil
+
+      // Multi-yearly logic
+      const intervalYears = Math.round(intervalMonths / 12)
+      const lastExec = lastExecMap[item.calibration_id]
+
+      if (!lastExec) return true // Belum pernah: tampil
+
+      const lastYear = new Date(lastExec).getFullYear()
+      const yearsDiff = year - lastYear
+
+      return yearsDiff > 0 && yearsDiff % intervalYears === 0
+    })
+
+    // ✅ FIX: executed hanya hitung log yang calibration_id-nya ada di validItems
+    const executed = (allLogData || []).filter(item => {
+      if (item.jenis !== 'Kalibrasi' || !item.execute_date) return false
+      try {
+        const executeDate = new Date(item.execute_date)
+        if (executeDate.getMonth() !== index || executeDate.getFullYear() !== year) return false
+
+        // ✅ Hanya hitung jika calibration_id match dengan validItems
+        return validItems.some(v => v.calibration_id === item.calibration_id || v.no_id === item.no_id)
+      } catch (e) {
+        return false
+      }
+    }).length
+
+    const count = isPast ? executed : validItems.length
+    const executedPercentage = count > 0 ? Math.min(100, Math.round((executed / count) * 100)) : 0
+
+    return { month, count, executed, executedPercentage }
+  },
+
+  // ✅ Helper: Process monthly PM data
+  processPMMonthlyData(month, index, year, alatData, allLogData) {
+    const monthShort = month.substring(0, 3).toLowerCase()
+    const isPastPeriodCheck = isPastPeriod(index, year)
+
+    // Filter equipment dengan jadwal PM untuk bulan ini
+    const monthData = (alatData || []).filter(item => {
+      if (item.pm_yn !== 'Y') return false
+      // ✅ PERBAIKAN: Jangan exclude obsolete di bulan berjalan agar total count tetap konsisten
+      // if (!isPastPeriodCheck && item.status === 'obsolete') return false
+      if (item['6_monthly'] && item['6_monthly'] !== 'NA' && item['6_monthly'] !== '-') {
+        if (item['6_monthly'].toLowerCase().includes(monthShort)) return true
+      }
+      if (item.yearly && item.yearly !== 'NA' && item.yearly !== '-') {
+        if (item.yearly.toLowerCase().includes(monthShort)) return true
+      }
+      return false
+    })
+
+    // ✅ FIX: Hitung executed HANYA untuk equipment yang ada di monthData
+    const executed = (allLogData || []).filter(item => {
+      if (item.jenis !== 'PM' || !item.execute_date) return false
+      try {
+        const executeDate = new Date(item.execute_date)
+        if (executeDate.getMonth() !== index || executeDate.getFullYear() !== year) return false
+
+        // ✅ Hanya hitung jika no_id ada di monthData (equipment yang dijadwalkan)
+        return monthData.some(eq => eq.no_id === item.no_id)
+      } catch (e) {
+        return false
+      }
+    }).length
+
+    const count = isPastPeriodCheck ? executed : monthData.length
+    const executedPercentage = count > 0 ? Math.min(100, Math.round((executed / count) * 100)) : 0
+
+    return {
+      month,
+      count,
+      executed,
+      executedPercentage
     }
   },
 
@@ -389,7 +443,8 @@ export const logAktivitasApi = {
       })
 
       const filtered = (kalibrasiData || []).filter(item => {
-        if (!isPastPeriod && alatStatusMap[item.no_id] === 'obsolete') return false
+        // ✅ PERBAIKAN: Jangan exclude obsolete di bulan berjalan agar tetap tampil di tabel aktivitas
+        // if (!isPastPeriod && alatStatusMap[item.no_id] === 'obsolete') return false
         if (!item.due_date) return false
         if (!item.due_date.toLowerCase().includes(monthShort)) return false
 

@@ -1,5 +1,5 @@
 // src/composables/useDashboard.js
-import { ref, computed, onUnmounted } from 'vue'
+import { ref, computed, onUnmounted, onMounted } from 'vue'
 import { logAktivitasApi } from '@/api'
 
 // === KONFIGURASI CACHE ===
@@ -157,6 +157,13 @@ export function useDashboard() {
       ])
       
       console.log('[Dashboard] API response:', { equipmentData, schedulesData })
+
+      if (equipmentData?.success === false) {
+        throw new Error(equipmentData.error || 'Gagal memuat total peralatan')
+      }
+      if (schedulesData?.success === false) {
+        throw new Error(schedulesData.error || 'Gagal memuat jadwal aktivitas')
+      }
       
       totalEquipment.value = equipmentData?.total || 0
       totalKalibrasi.value = schedulesData?.totalKalibrasi || 0
@@ -192,6 +199,13 @@ export function useDashboard() {
         logAktivitasApi.getTotalDaftarAlat(),
         logAktivitasApi.getTotalSchedules(year)
       ])
+
+      if (equipmentData?.success === false) {
+        throw new Error(equipmentData.error || 'Gagal memuat total peralatan')
+      }
+      if (schedulesData?.success === false) {
+        throw new Error(schedulesData.error || 'Gagal memuat jadwal aktivitas')
+      }
       
       totalEquipment.value = equipmentData?.total || 0
       totalKalibrasi.value = schedulesData?.totalKalibrasi || 0
@@ -237,6 +251,22 @@ export function useDashboard() {
   // ✅ CLEANUP SAAT COMPOSABLE DIHAPUS
   onUnmounted(() => {
     stopAutoRefresh()
+  })
+
+  // ✅ LISTEN FOR DATA VERSION CHANGES
+  onMounted(() => {
+    const handleDataVersionChange = (event) => {
+      console.log('[Dashboard] Data version changed, refreshing...', event.detail)
+      // Force refresh without cache
+      fetchDashboardData(selectedYear.value, false)
+    }
+
+    window.addEventListener('data-version-created', handleDataVersionChange)
+
+    // Cleanup listener on unmount
+    onUnmounted(() => {
+      window.removeEventListener('data-version-created', handleDataVersionChange)
+    })
   })
 
   // ✅ REFRESH DATA (MANUAL)
