@@ -2,6 +2,7 @@
 import { ref, nextTick, onUnmounted } from 'vue'
 import { jadwalKalibrasiApi } from '@/api'
 import { useLogAktivitas } from '@/composables/useLogAktivitas'
+import { useDataChangeTrigger } from './useDataChangeTrigger'
 
 const CACHE_KEY = 'jadwal_kalibrasi_cache'
 const CACHE_DURATION = 1 * 60 * 1000 // 1 menit
@@ -13,6 +14,8 @@ export function useJadwalKalibrasi() {
   const isDeleting = ref(false)
   let dataTableInstance = null
   let refreshTimer = null
+
+  const { onKalibrasiChange } = useDataChangeTrigger()
 
   // === Init DataTables ===
   const initDataTable = async () => {
@@ -80,6 +83,7 @@ export function useJadwalKalibrasi() {
   const saveJadwal = async (jadwal) => {
     isSaving.value = true
     try {
+      const isUpdate = !!jadwal.no
       let result
       if (jadwal.no) {
         result = await jadwalKalibrasiApi.update(jadwal.no, jadwal)
@@ -87,10 +91,15 @@ export function useJadwalKalibrasi() {
         result = await jadwalKalibrasiApi.create(jadwal)
       }
       if (!result.success) throw new Error(result.message || 'Gagal menyimpan jadwal')
+
+      // ✅ Trigger versioning on data change
+      const action = isUpdate ? 'update' : 'insert'
+      await onKalibrasiChange(action, jadwal)
+
       localStorage.removeItem(CACHE_KEY)
       await fetchList(true)
       await initDataTable()
-      Swal.fire('Berhasil!', `Jadwal berhasil ${jadwal.no ? 'diupdate' : 'ditambahkan'}`, 'success')
+      Swal.fire('Berhasil!', `Jadwal berhasil ${isUpdate ? 'diupdate' : 'ditambahkan'}`, 'success')
       return result
     } catch (error) {
       if (error.isDuplicate) {
@@ -120,8 +129,15 @@ export function useJadwalKalibrasi() {
 
     isDeleting.value = true
     try {
+      // Get jadwal data before deletion for versioning trigger
+      const jadwalToDelete = refJadwal.value.find(j => String(j.no) === String(no)) || { no_id: no, description }
+
       const result = await jadwalKalibrasiApi.delete(no)
       if (!result || !result.success) throw new Error(result?.message || 'Respons tidak valid')
+
+      // ✅ Trigger versioning on data change
+      await onKalibrasiChange('delete', jadwalToDelete)
+
       refJadwal.value = refJadwal.value.filter(j => String(j.no) !== String(no))
       localStorage.removeItem(CACHE_KEY)
       await fetchList(true)

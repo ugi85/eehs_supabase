@@ -52,6 +52,74 @@
                     placeholder="2.1.0"
                   />
                 </div>
+
+                <!-- Data Versioning Management -->
+                <div class="card card-info mt-4">
+                  <div class="card-header">
+                    <h3 class="card-title"><i class="fas fa-code-branch mr-2"></i>Manajemen Versi Data</h3>
+                    <div class="card-tools">
+                      <button type="button" class="btn btn-tool" data-card-widget="collapse">
+                        <i class="fas fa-minus"></i>
+                      </button>
+                    </div>
+                  </div>
+                  <div class="card-body">
+                    <div class="form-group">
+                      <label>Deskripsi Versi Baru</label>
+                      <input 
+                        v-model="newVersionDescription" 
+                        type="text" 
+                        class="form-control" 
+                        placeholder="Update jadwal kalibrasi Mei 2026"
+                      />
+                      <small class="form-text text-muted">
+                        Deskripsi perubahan data yang akan di-snapshot sebagai versi baru
+                      </small>
+                    </div>
+                    <button 
+                      @click="createNewVersion" 
+                      class="btn btn-success"
+                      :disabled="versioningLoading || !newVersionDescription.trim()"
+                    >
+                      <span v-if="versioningLoading">
+                        <span class="spinner-border spinner-border-sm mr-1"></span>
+                        Membuat Versi...
+                      </span>
+                      <span v-else>
+                        <i class="fas fa-plus mr-1"></i>Buat Versi Data Baru
+                      </span>
+                    </button>
+
+                    <!-- Version History -->
+                    <div class="mt-4" v-if="versions.length > 0">
+                      <h5>Riwayat Versi Data</h5>
+                      <div class="table-responsive">
+                        <table class="table table-sm table-bordered">
+                          <thead>
+                            <tr>
+                              <th>Versi</th>
+                              <th>Tanggal</th>
+                              <th>Deskripsi</th>
+                              <th>Status</th>
+                            </tr>
+                          </thead>
+                          <tbody>
+                            <tr v-for="version in versions" :key="version.version_id">
+                              <td>{{ version.version_name }}</td>
+                              <td>{{ formatDate(version.snapshot_date) }}</td>
+                              <td>{{ version.description }}</td>
+                              <td>
+                                <span class="badge" :class="version.is_active ? 'badge-success' : 'badge-secondary'">
+                                  {{ version.is_active ? 'Aktif' : 'Tidak Aktif' }}
+                                </span>
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+                      </div>
+                    </div>
+                  </div>
+                </div>
                 
                 <!-- Perusahaan -->
                 <div class="form-group">
@@ -507,6 +575,7 @@
 <script setup>
 import { ref, computed, watch } from 'vue'
 import { useFrontendConfig } from '@/composables/useConfig'
+import { useVersioning } from '@/composables/useVersioning'
 
 const {
   config,
@@ -522,12 +591,22 @@ const {
   deleteLogo
 } = useFrontendConfig()
 
+const {
+  versions,
+  versioningLoading,
+  fetchVersions,
+  createVersion
+} = useVersioning()
+
 // local draft object used by the form; changes here are not reflected globally
 const draft = ref({ ...config.value })
 const draftLogo = ref(previewLogo.value)
 const draftCompanyLogo = ref(null) // For company logo preview
 const isSavingLocal = ref(false) // Flag untuk mencegah watch trigger saat save
 const isUploading = ref(false)
+
+// Versioning
+const newVersionDescription = ref('')
 
 // keep draft in sync when config is externally updated (bukan dari save lokal)
 watch(config, (newVal) => {
@@ -905,6 +984,59 @@ const confirmAndSave = async () => {
     await doSave()
   }
 }
+
+// ✅ CREATE NEW DATA VERSION
+const createNewVersion = async () => {
+  if (!newVersionDescription.value.trim()) return
+
+  if (window.Swal) {
+    window.Swal.fire({
+      title: 'Buat versi data baru?',
+      text: `Snapshot data saat ini akan dibuat dengan deskripsi: "${newVersionDescription.value}"`,
+      icon: 'question',
+      showCancelButton: true,
+      confirmButtonText: 'Ya, buat versi',
+      cancelButtonText: 'Batal'
+    }).then(async (result) => {
+      if (result.isConfirmed) {
+        try {
+          const result = await createVersion(newVersionDescription.value)
+          if (result.success) {
+            newVersionDescription.value = ''
+            await fetchVersions()
+            if (window.Swal) {
+              window.Swal.fire({
+                icon: 'success',
+                title: 'Berhasil!',
+                text: `Versi data baru ${result.data.version_name} telah dibuat`,
+                timer: 2000,
+                showConfirmButton: false
+              })
+            }
+          } else {
+            throw new Error(result.error || 'Gagal membuat versi')
+          }
+        } catch (error) {
+          console.error('Create version error:', error)
+          if (window.Swal) {
+            window.Swal.fire({
+              icon: 'error',
+              title: 'Gagal!',
+              text: error.message || 'Terjadi kesalahan saat membuat versi data',
+              confirmButtonText: 'OK'
+            })
+          }
+        }
+      }
+    })
+  }
+}
+
+// ✅ LOAD VERSIONS ON MOUNT
+import { onMounted } from 'vue'
+onMounted(async () => {
+  await fetchVersions()
+})
 
 </script>
 

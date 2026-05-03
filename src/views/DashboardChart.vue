@@ -474,7 +474,7 @@ const retryFetch = async () => {
 
 onMounted(() => {
   // ✅ INISIALISASI DENGAN CACHE
-  fetchDashboardData('2026')
+  fetchDashboardData()
   
   // ✅ MULAI AUTO-REFRESH
   startAutoRefresh()
