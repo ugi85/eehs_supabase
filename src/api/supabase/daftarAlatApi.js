@@ -62,6 +62,16 @@ export const daftarAlatApi = {
       return mappedData
     } catch (error) {
       console.error('[Daftar Alat API] Error fetchList:', error)
+
+      // Auto-switch to Google Sheets if Supabase error is connection-related (e.g., 503, 429)
+      if (error.status === 429 || error.status === 503 || error.status === 0) {
+        console.warn('[Daftar Alat API] Supabase connection error. Attempting auto-switch...')
+        const { useSettingsStore } = await import('@/stores/settings')
+        const settings = useSettingsStore()
+        settings.switchToGoogleSheets()
+        window.location.reload()
+      }
+
       return []
     }
   },
@@ -82,6 +92,14 @@ export const daftarAlatApi = {
       return data
     } catch (error) {
       console.error('[Daftar Alat API] Error getToolByNo:', error)
+
+      if (error.status === 429 || error.status === 503 || error.status === 0) {
+        const { useSettingsStore } = await import('@/stores/settings')
+        const settings = useSettingsStore()
+        settings.switchToGoogleSheets()
+        window.location.reload()
+      }
+
       return null
     }
   },
@@ -162,7 +180,7 @@ export const daftarAlatApi = {
         '6_monthly': tool.pm_6monthly || tool['6_monthly'],
         yearly: tool.pm_yearly || tool.yearly,
         internal_external: tool.pm_internal_external || tool.internal_external,
-        y_n: tool.calib_yesno || tool.y_n,
+        y_n: tool.calib_yesno || tool.calib_yesno,
         schedule: tool.calib_schedule || tool.schedule,
         area: tool.area || null,
         location: tool.location
@@ -219,7 +237,7 @@ export const daftarAlatApi = {
   },
 
   /**
-   * UPSERT: Insert or update berdasarkan no_id (untuk import Excel)
+   * UPSERT: Insert atau update berdasarkan no_id (untuk import Excel)
    * Jika no_id sudah ada → update, jika belum → insert
    */
   async upsertByNoId(tool) {
@@ -455,3 +473,4 @@ export const daftarAlatApi = {
     }
   }
 }
+

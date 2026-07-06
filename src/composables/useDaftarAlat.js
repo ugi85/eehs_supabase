@@ -91,7 +91,8 @@ export function useDaftarAlat() {
     stopAutoRefresh()
     refreshTimer = setInterval(async () => {
       localStorage.removeItem(`${CACHE_KEY}_${statusFilter.value}`)
-      await fetchList(true, true) // silent — data update di background, DataTable tetap
+      await fetchList(true, true) // silent — data update di background
+      // JANGAN PANGGIL initDataTable() di sini agar tidak flicker
     }, CACHE_DURATION)
   }
 
@@ -214,3 +215,4 @@ export function useDaftarAlat() {
     stopAutoRefresh
   }
 }
+

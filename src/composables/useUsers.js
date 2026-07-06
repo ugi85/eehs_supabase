@@ -185,11 +185,16 @@ export function useUsers() {
   // === LOGIN: User authentication ===
   const login = async (email, password) => {
     try {
+      console.log('[useUsers] Login started for:', email)
       const result = await userApi.login(email, password)
+      console.log('[useUsers] Login result:', { success: result.success, message: result.message })
       return result
     } catch (error) {
-      console.error('Login gagal:', error)
-      throw error
+      console.error('[useUsers] Login error:', error)
+      return {
+        success: false,
+        message: error.message || 'Login gagal'
+      }
     }
   }
 

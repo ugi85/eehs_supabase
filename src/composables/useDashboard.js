@@ -151,9 +151,17 @@ export function useDashboard() {
     error.value = null
     
     try {
+      console.log('[Dashboard] Fetching from API...')
+      
       const [equipmentData, schedulesData] = await Promise.all([
-        logAktivitasApi.getTotalDaftarAlat(),
-        logAktivitasApi.getTotalSchedules(year)
+        logAktivitasApi.getTotalDaftarAlat().catch(err => {
+          console.error('[Dashboard] getTotalDaftarAlat error:', err)
+          return { success: false, error: err.message }
+        }),
+        logAktivitasApi.getTotalSchedules(year).catch(err => {
+          console.error('[Dashboard] getTotalSchedules error:', err)
+          return { success: false, error: err.message }
+        })
       ])
       
       console.log('[Dashboard] API response:', { equipmentData, schedulesData })
@@ -183,9 +191,20 @@ export function useDashboard() {
       })
       
       isInitialized.value = true
+      console.log('[Dashboard] Data loaded successfully')
     } catch (err) {
       console.error('Error fetching dashboard:', err)
       error.value = err.message || 'Gagal memuat data dashboard'
+      
+      // Set default values on error
+      totalEquipment.value = 0
+      totalKalibrasi.value = 0
+      totalPM.value = 0
+      kalibrasiMonthly.value = []
+      pmMonthly.value = []
+      
+      isInitialized.value = true
+      
       throw err
     } finally {
       loading.value = false

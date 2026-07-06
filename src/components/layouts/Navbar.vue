@@ -55,6 +55,20 @@ const openChangePassword = () => {
         </div>
       </li>
 
+      <!-- Emergency Database Switch Button -->
+      <li class="nav-item">
+        <a
+          class="nav-link text-danger"
+          href="#"
+          role="button"
+          title="Emergency: Switch Database"
+          @click.prevent="$router.push('/emergency-switch')"
+        >
+          <i class="fas fa-database"></i>
+          <span class="ml-1 d-none d-sm-inline">DB</span>
+        </a>
+      </li>
+
       <!-- Login Button / User Menu -->
       <li v-if="!isLoggedIn" class="nav-item">
         <a

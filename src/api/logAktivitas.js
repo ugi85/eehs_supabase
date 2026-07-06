@@ -1,6 +1,8 @@
 // src/api/logAktivitas.js
+// ✅ ROUTER WRAPPER - Routes between Supabase and Google Sheets
 import api from '@/plugins/axios'
 import { useSettingsStore } from '@/stores/settings'
+import { logAktivitasApi as supabaseLogAktivitasApi } from '@/api/supabase/logAktivitasApi'
 
 // ✅ SET TIMEOUT GLOBAL 30 DETIK
 api.defaults.timeout = 30000
@@ -15,109 +17,178 @@ function toFormData(data) {
   return params
 }
 
+// ✅ GET API ENDPOINT - dengan fallback ke Google Apps Script
+function getLogAktivitasEndpoint() {
+  const settings = useSettingsStore()
+  
+  // ✅ DEBUG: Log current database type
+  console.log('[logAktivitas] Current database type:', settings.database.type)
+  
+  if (settings.isUsingSupabase) {
+    return null  // Will use Supabase API
+  }
+  
+  // Use Google Apps Script endpoint
+  const endpoint = settings.api.logAktivitas || settings.googleAppsScript.logAktivitas
+  console.log('[logAktivitas] Using endpoint:', endpoint)
+  return endpoint
+}
+
 export const logAktivitasApi = {
-  // ✅ CREATE LOG
-  async createLog(log) {
+  // ✅ DASHBOARD CHARTS - getTotalDaftarAlat
+  async getTotalDaftarAlat() {
     const settings = useSettingsStore()
     
-    const payload = toFormData({
-      action: 'create',
-      no_id: log.no_id,
-      cal_id: log.cal_id,
-      jenis: log.jenis,
-      tanggal: log.tanggal,
-      petugas: log.petugas,
-      keterangan: log.keterangan
-    })
-
-    try {
-      const { data } = await api.post(settings.api.logAktivitas, payload)
-      if (!data.success) {
-        throw new Error(data.message || 'Gagal menyimpan log aktivitas')
-      }
-      return data
-    } catch (error) {
-      console.error('Error in createLog:', error)
-      throw error
+    if (settings.isUsingSupabase) {
+      return await supabaseLogAktivitasApi.getTotalDaftarAlat()
     }
-  },
-
-  // ✅ GET LOGS BY MONTH & YEAR
-  async getLogsByMonthYear(month, year) {
-    const settings = useSettingsStore()
     
     try {
-      const { data } = await api.get(settings.api.logAktivitas, {
-        params: { 
-          action: 'getbymonthyear', 
-          month: String(month), 
-          year: String(year) 
-        }
-      })
-      if (!data?.success) {
-        throw new Error(data?.message || 'Gagal mengambil log aktivitas')
-      }
-      return data?.data || []
-    } catch (error) {
-      console.error('Error in getLogsByMonthYear:', error)
-      throw error
-    }
-  },
-
-  // ✅ GET ALL FOR PERIOD (PM + KALIBRASI)
-  async getAllForPeriod(month, year) {
-    const settings = useSettingsStore()
-    
-    try {
-      const { data } = await api.get(settings.api.logAktivitas, {
-        params: { 
-          action: 'getallforperiod', 
-          month: String(month), 
-          year: String(year) 
-        }
+      const endpoint = getLogAktivitasEndpoint()
+      const { data } = await api.get(endpoint, {
+        params: { action: 'getdaftarshalat' }
       })
       
-      if (!data?.success) {
-        throw new Error(data?.message || 'Gagal mengambil data periode')
+      return {
+        success: data?.success ?? true,
+        total: data?.data?.length ?? 0,
+        data: data?.data ?? []
       }
-      
-      return data
     } catch (error) {
-      console.error('Error in getAllForPeriod:', error)
-      throw error
+      console.error('[logAktivitasApi] Error in getTotalDaftarAlat:', error)
+      return { success: false, total: 0, error: error.message, data: [] }
     }
   },
 
-  // ✅ GET PM FOR PERIOD (HANYA PM)
-  async getPMForPeriod(month, year) {
+  // ✅ DASHBOARD CHARTS - getKalibrasiScheduleByMonth
+  async getKalibrasiScheduleByMonth(year) {
     const settings = useSettingsStore()
     
+    if (settings.isUsingSupabase) {
+      return await supabaseLogAktivitasApi.getKalibrasiScheduleByMonth(year)
+    }
+    
+    const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+    
     try {
-      const { data } = await api.get(settings.api.logAktivitas, {
-        params: { 
-          action: 'getpmforperiod', 
-          month: String(month), 
-          year: String(year) 
-        }
+      const promises = months.map(month =>
+        this.getKalibrasiForPeriod(month, year)
+          .then(response => ({ month, items: response?.data || [] }))
+          .catch(err => {
+            console.warn(`[logAktivitasApi] Error fetching kalibrasi ${month} ${year}:`, err.message)
+            return { month, items: [] }
+          })
+      )
+
+      const results = await Promise.all(promises)
+
+      const scheduleData = results.map(({ month, items }) => {
+        const count = items.length
+        const executed = items.filter(item => item.status === 'Selesai').length
+        const executedPercentage = count > 0 ? Math.round((executed / count) * 100) : 0
+        return { month, count, executed, executedPercentage, label: month.substring(0, 3) }
       })
-      
-      if (!data?.success) {
-        throw new Error(data?.message || 'Gagal mengambil data PM')
-      }
-      
-      return data
+
+      return { success: true, year, data: scheduleData }
     } catch (error) {
-      console.error('Error in getPMForPeriod:', error)
-      throw error
+      console.error('[logAktivitasApi] Error in getKalibrasiScheduleByMonth:', error)
+      return { success: false, year, data: [], error: error.message }
     }
   },
 
-  // ✅ GET KALIBRASI FOR PERIOD (HANYA KALIBRASI)
+  // ✅ DASHBOARD CHARTS - getPMScheduleByMonth
+  async getPMScheduleByMonth(year) {
+    const settings = useSettingsStore()
+    
+    if (settings.isUsingSupabase) {
+      return await supabaseLogAktivitasApi.getPMScheduleByMonth(year)
+    }
+    
+    const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
+
+    try {
+      const promises = months.map(month =>
+        this.getPMForPeriod(month, year)
+          .then(response => ({ month, items: response?.data || [] }))
+          .catch(err => {
+            console.warn(`[logAktivitasApi] Error fetching PM ${month} ${year}:`, err.message)
+            return { month, items: [] }
+          })
+      )
+
+      const results = await Promise.all(promises)
+
+      const scheduleData = results.map(({ month, items }) => {
+        const count = items.length
+        const executed = items.filter(item => item.status === 'Selesai').length
+        const executedPercentage = count > 0 ? Math.round((executed / count) * 100) : 0
+        return { month, count, executed, executedPercentage, label: month.substring(0, 3) }
+      })
+
+      return { success: true, year, data: scheduleData }
+    } catch (error) {
+      console.error('[logAktivitasApi] Error in getPMScheduleByMonth:', error)
+      return { success: false, year, data: [], error: error.message }
+    }
+  },
+
+  // ✅ DASHBOARD CHARTS - getTotalSchedules
+  async getTotalSchedules(year) {
+    const settings = useSettingsStore()
+    
+    if (settings.isUsingSupabase) {
+      return await supabaseLogAktivitasApi.getTotalSchedules(year)
+    }
+    
+    try {
+      console.log('[logAktivitasApi] getTotalSchedules called with year:', year)
+      
+      const [kalibrasiResult, pmResult] = await Promise.all([
+        this.getKalibrasiScheduleByMonth(year),
+        this.getPMScheduleByMonth(year)
+      ])
+      
+      console.log('[logAktivitasApi] Results:', { kalibrasiResult, pmResult })
+      
+      const totalKalibrasi = kalibrasiResult.data?.reduce((sum, item) => sum + (item.count || 0), 0) || 0
+      const totalPM = pmResult.data?.reduce((sum, item) => sum + (item.count || 0), 0) || 0
+      
+      return {
+        success: true,
+        year,
+        totalKalibrasi,
+        totalPM,
+        totalAktivitas: totalKalibrasi + totalPM,
+        kalibrasiMonthly: kalibrasiResult.data || [],
+        pmMonthly: pmResult.data || []
+      }
+    } catch (error) {
+      console.error('[logAktivitasApi] Error in getTotalSchedules:', error)
+      return {
+        success: false,
+        year,
+        totalKalibrasi: 0,
+        totalPM: 0,
+        totalAktivitas: 0,
+        kalibrasiMonthly: [],
+        pmMonthly: [],
+        error: error.message
+      }
+    }
+  },
+
+  // ✅ GET KALIBRASI FOR PERIOD
   async getKalibrasiForPeriod(month, year) {
     const settings = useSettingsStore()
     
+    if (settings.isUsingSupabase) {
+      return await supabaseLogAktivitasApi.getKalibrasiForPeriod(month, year)
+    }
+    
+    const endpoint = getLogAktivitasEndpoint()
+    
     try {
-      const { data } = await api.get(settings.api.logAktivitas, {
+      const { data } = await api.get(endpoint, {
         params: { 
           action: 'getkalibrasiforperiod', 
           month: String(month), 
@@ -129,101 +200,70 @@ export const logAktivitasApi = {
         throw new Error(data?.message || 'Gagal mengambil data kalibrasi')
       }
       
-      return data
+      return { success: true, data: data?.data || [] }
     } catch (error) {
-      console.error('Error in getKalibrasiForPeriod:', error)
-      throw error
+      console.error('[logAktivitasApi] Error in getKalibrasiForPeriod:', error)
+      return { success: false, data: [], error: error.message }
     }
   },
 
-  // ✅ GET DAFTAR ALAT
-  async getDaftarAlat() {
+  // ✅ GET PM FOR PERIOD
+  async getPMForPeriod(month, year) {
     const settings = useSettingsStore()
     
-    try {
-      const { data } = await api.get(settings.api.logAktivitas, {
-        params: { action: 'getdaftarshalat' }
-      })
-      
-      if (!data?.success) {
-        throw new Error(data?.message || 'Gagal mengambil daftar alat')
-      }
-      
-      return data?.data || []
-    } catch (error) {
-      console.error('Error in getDaftarAlat:', error)
-      throw error
+    if (settings.isUsingSupabase) {
+      return await supabaseLogAktivitasApi.getPMForPeriod(month, year)
     }
-  },
-
-  // ✅ GET LOG BY NO
-  async getLogByNo(no) {
-    const settings = useSettingsStore()
+    
+    const endpoint = getLogAktivitasEndpoint()
     
     try {
-      const { data } = await api.get(settings.api.logAktivitas, {
+      const { data } = await api.get(endpoint, {
         params: { 
-          action: 'get', 
-          no: String(no) 
+          action: 'getpmforperiod', 
+          month: String(month), 
+          year: String(year) 
         }
       })
       
       if (!data?.success) {
-        throw new Error(data?.message || 'Gagal mengambil log')
+        throw new Error(data?.message || 'Gagal mengambil data PM')
       }
       
-      return data?.item
+      return { success: true, data: data?.data || [] }
     } catch (error) {
-      console.error('Error in getLogByNo:', error)
-      throw error
+      console.error('[logAktivitasApi] Error in getPMForPeriod:', error)
+      return { success: false, data: [], error: error.message }
     }
   },
 
-  // ✅ UPDATE LOG
-  async updateLog(log) {
+  // ✅ GET ALL FOR PERIOD (PM + KALIBRASI)
+  async getAllForPeriod(month, year) {
     const settings = useSettingsStore()
     
-    const payload = toFormData({
-      action: 'update',
-      no: log.no,
-      no_id: log.no_id,
-      cal_id: log.cal_id,
-      jenis: log.jenis,
-      tanggal: log.tanggal,
-      petugas: log.petugas,
-      keterangan: log.keterangan
-    })
-
-    try {
-      const { data } = await api.post(settings.api.logAktivitas, payload)
-      if (!data.success) {
-        throw new Error(data.message || 'Gagal update log aktivitas')
-      }
-      return data
-    } catch (error) {
-      console.error('Error in updateLog:', error)
-      throw error
+    if (settings.isUsingSupabase) {
+      return await supabaseLogAktivitasApi.getAllForPeriod(month, year)
     }
-  },
-
-  // ✅ DELETE LOG
-  async deleteLog(no) {
-    const settings = useSettingsStore()
     
-    const payload = toFormData({
-      action: 'delete',
-      no: String(no)
-    })
-
+    const endpoint = getLogAktivitasEndpoint()
+    
     try {
-      const { data } = await api.post(settings.api.logAktivitas, payload)
-      if (!data.success) {
-        throw new Error(data.message || 'Gagal hapus log aktivitas')
+      const { data } = await api.get(endpoint, {
+        params: { 
+          action: 'getallforperiod', 
+          month: String(month), 
+          year: String(year) 
+        }
+      })
+      
+      if (!data?.success) {
+        throw new Error(data?.message || 'Gagal mengambil data periode')
       }
-      return data
+      
+      return { success: true, data: data?.data || [] }
     } catch (error) {
-      console.error('Error in deleteLog:', error)
-      throw error
+      console.error('[logAktivitasApi] Error in getAllForPeriod:', error)
+      return { success: false, data: [], error: error.message }
     }
   },
 
@@ -231,8 +271,14 @@ export const logAktivitasApi = {
   async listLogs() {
     const settings = useSettingsStore()
     
+    if (settings.isUsingSupabase) {
+      return await supabaseLogAktivitasApi.listLogs()
+    }
+    
+    const endpoint = getLogAktivitasEndpoint()
+    
     try {
-      const { data } = await api.get(settings.api.logAktivitas, {
+      const { data } = await api.get(endpoint, {
         params: { action: 'list' }
       })
       
@@ -242,149 +288,34 @@ export const logAktivitasApi = {
       
       return data?.data || []
     } catch (error) {
-      console.error('Error in listLogs:', error)
-      throw error
+      console.error('[logAktivitasApi] Error in listLogs:', error)
+      return []
     }
   },
 
-  // ════════════════════════════════════════════════════════════════
-  // ✅ DASHBOARD CHARTS - SEQUENTIAL REQUEST + ERROR HANDLING
-  // ════════════════════════════════════════════════════════════════
-
-  async getTotalDaftarAlat() {
-    try {
-      const data = await this.getDaftarAlat()
-      return {
-        success: true,
-        total: data.length,
-        data
-      }
-    } catch (error) {
-      console.error('Error in getTotalDaftarAlat:', error)
-      throw error
+  // ✅ GET LOG BY NO (for detail view)
+  async getLogByNo(no) {
+    const settings = useSettingsStore()
+    
+    if (settings.isUsingSupabase) {
+      return await supabaseLogAktivitasApi.getLogByNo?.(no) || null
     }
-  },
-
-  /**
-   * ✅ MENDAPATKAN JADWAL KALIBRASI PER BULAN - REQUEST SEQUENTIAL
-   * Menghindari timeout & CORS dengan request satu per satu
-   */
-  async getKalibrasiScheduleByMonth(year) {
-    const months = [
-      'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December'
-    ]
-
+    
+    const endpoint = getLogAktivitasEndpoint()
+    
     try {
-      // Jalankan semua request bulan secara paralel dan tangani hasil masing-masing
-      const promises = months.map(month =>
-        this.getKalibrasiForPeriod(month, year)
-          .then(response => ({ month, items: response?.data || [] }))
-          .catch(err => {
-            console.warn(`Error fetching kalibrasi ${month} ${year}:`, err.message)
-            return { month, items: [] }
-          })
-      )
-
-      const results = await Promise.all(promises)
-
-      const scheduleData = results.map(({ month, items }) => {
-        const count = items.length
-        const executed = items.filter(item => item.status === 'Selesai').length
-        const executedPercentage = count > 0 ? Math.round((executed / count) * 100) : 0
-        return {
-          month,
-          count,
-          executed,
-          executedPercentage,
-          label: month.substring(0, 3)
-        }
+      const { data } = await api.get(endpoint, {
+        params: { action: 'get', no: String(no) }
       })
-
-      return {
-        success: true,
-        year,
-        data: scheduleData
-      }
-    } catch (error) {
-      console.error('Error in getKalibrasiScheduleByMonth:', error)
-      throw error
-    }
-  },
-
-  /**
-   * ✅ MENDAPATKAN JADWAL PM PER BULAN - REQUEST SEQUENTIAL
-   * Menghindari timeout & CORS dengan request satu per satu
-   */
-  async getPMScheduleByMonth(year) {
-    const months = [
-      'January', 'February', 'March', 'April', 'May', 'June',
-      'July', 'August', 'September', 'October', 'November', 'December'
-    ]
-
-    try {
-      const promises = months.map(month =>
-        this.getPMForPeriod(month, year)
-          .then(response => ({ month, items: response?.data || [] }))
-          .catch(err => {
-            console.warn(`Error fetching PM ${month} ${year}:`, err.message)
-            return { month, items: [] }
-          })
-      )
-
-      const results = await Promise.all(promises)
-
-      const scheduleData = results.map(({ month, items }) => {
-        const count = items.length
-        const executed = items.filter(item => item.status === 'Selesai').length
-        const executedPercentage = count > 0 ? Math.round((executed / count) * 100) : 0
-        return {
-          month,
-          count,
-          executed,
-          executedPercentage,
-          label: month.substring(0, 3)
-        }
-      })
-
-      return {
-        success: true,
-        year,
-        data: scheduleData
-      }
-    } catch (error) {
-      console.error('Error in getPMScheduleByMonth:', error)
-      throw error
-    }
-  },
-
-
-  /**
-   * ✅ MENDAPATKAN TOTAL JADWAL (KALIBRASI + PM) PER TAHUN
-   */
-  async getTotalSchedules(year) {
-    try {
-      // ✅ AMBIL DATA SECARA PARALEL (AMAN KARENA HANYA 2 REQUEST)
-      const [kalibrasiResult, pmResult] = await Promise.all([
-        this.getKalibrasiScheduleByMonth(year),
-        this.getPMScheduleByMonth(year)
-      ])
       
-      const totalKalibrasi = kalibrasiResult.data.reduce((sum, item) => sum + item.count, 0)
-      const totalPM = pmResult.data.reduce((sum, item) => sum + item.count, 0)
-      
-      return {
-        success: true,
-        year,
-        totalKalibrasi,
-        totalPM,
-        totalAktivitas: totalKalibrasi + totalPM,
-        kalibrasiMonthly: kalibrasiResult.data,
-        pmMonthly: pmResult.data
+      if (!data?.success) {
+        return null
       }
+      
+      return data?.item || null
     } catch (error) {
-      console.error('Error in getTotalSchedules:', error)
-      throw error
+      console.error('[logAktivitasApi] Error in getLogByNo:', error)
+      return null
     }
   }
 }

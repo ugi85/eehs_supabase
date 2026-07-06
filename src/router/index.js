@@ -332,6 +332,14 @@ const router = createRouter({
       ]
      },
 
+  // Emergency Database Switch - Accessible without login
+  {
+    path: '/emergency-switch',
+    name: 'emergencySwitch',
+    component: () => import('@/views/pages/EmergencyDatabaseSwitch.vue'),
+    meta: { requiresAuth: false }
+  },
+
   // Auth routes
 
        {
@@ -402,36 +410,44 @@ router.beforeEach((to, from, next) => {
   if (isLoggedIn && to.meta.requiresPermission) {
     const hasPermission = permissions.includes(to.meta.requiresPermission)
     if (!hasPermission) {
-      Swal.fire({
-        icon: 'error',
-        title: 'Akses Ditolak',
-        text: 'Anda tidak memiliki izin untuk mengakses halaman ini'
-      })
-      next('/dashChart') // Redirect ke dashboard
-      return
-    }
-  }
-
-  // Cek jika route membutuhkan role admin (fallback jika tidak ada custom permissions)
-  if (to.meta.requiresAdmin && isLoggedIn) {
-    // Jika ada custom permissions, cek permission 'user:view'
-    if (permissions.length > 0) {
-      if (!permissions.includes('user:view')) {
+      console.warn('[Router] Access denied:', to.path, '- Permission required:', to.meta.requiresPermission)
+      // Only show alert if not redirecting from same route (prevents flicker)
+      if (from.path !== '/dashChart') {
         Swal.fire({
           icon: 'error',
           title: 'Akses Ditolak',
           text: 'Anda tidak memiliki izin untuk mengakses halaman ini'
         })
+      }
+      next('/dashChart')
+      return
+    }
+  }
+
+  // Cek jika route membutuhkan role admin
+  if (to.meta.requiresAdmin && isLoggedIn) {
+    if (permissions.length > 0) {
+      if (!permissions.includes('user:view')) {
+        console.warn('[Router] Access denied:', to.path, '- user:view permission required')
+        if (from.path !== '/dashChart') {
+          Swal.fire({
+            icon: 'error',
+            title: 'Akses Ditolak',
+            text: 'Anda tidak memiliki izin untuk mengakses halaman ini'
+          })
+        }
         next('/dashChart')
         return
       }
     } else if (userStore.state.user?.role !== 'admin') {
-      // Fallback ke role-based check
-      Swal.fire({
-        icon: 'error',
-        title: 'Akses Ditolak',
-        text: 'Anda tidak memiliki izin untuk mengakses halaman ini'
-      })
+      console.warn('[Router] Access denied:', to.path, '- admin role required')
+      if (from.path !== '/dashChart') {
+        Swal.fire({
+          icon: 'error',
+          title: 'Akses Ditolak',
+          text: 'Anda tidak memiliki izin untuk mengakses halaman ini'
+        })
+      }
       next('/dashChart')
       return
     }
@@ -440,18 +456,20 @@ router.beforeEach((to, from, next) => {
   // Cek jika route membutuhkan superadmin
   if (to.meta.requiresSuperadmin && isLoggedIn) {
     const user = userStore.state.user
-    // Check role = 'superadmin' OR email starts with 'super@'
     const isSuperadmin = user && (
       (user.role && user.role.toLowerCase() === 'superadmin') ||
       (user.email && user.email.toLowerCase().startsWith('super@'))
     )
     
     if (!isSuperadmin) {
-      Swal.fire({
-        icon: 'error',
-        title: 'Akses Ditolak',
-        text: 'Halaman ini hanya dapat diakses oleh Super Admin'
-      })
+      console.warn('[Router] Access denied:', to.path, '- superadmin role required')
+      if (from.path !== '/dashChart') {
+        Swal.fire({
+          icon: 'error',
+          title: 'Akses Ditolak',
+          text: 'Halaman ini hanya dapat diakses oleh Super Admin'
+        })
+      }
       next('/dashChart')
       return
     }

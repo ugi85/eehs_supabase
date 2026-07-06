@@ -1,6 +1,7 @@
 // src/composables/useConfig.js
 import { ref, computed } from 'vue'
 import { configApi } from '@/api'
+import { useSettingsStore } from '@/stores/settings'
 
 // ✅ DEFAULT CONFIG
 const DEFAULT_CONFIG = {
@@ -96,18 +97,28 @@ function transformFrontendToSupabase(frontendData) {
 
 // ✅ Load config dari Supabase
 const loadConfig = async (silent = false) => {
-  if (!silent) {
-    isLoading.value = true
+
+
+  const settings = useSettingsStore()
+  if (settings.isUsingGoogleSheets) {
+    console.log('[useConfig] Mode Google Sheets aktif, memuat dari fallback lokal...')
+    return loadFromLocalStorage(silent)
   }
   
-  try {
+
     if (!silent) {
-      console.log('[useConfig] Loading config from Supabase...')
+
+    isLoading.value = true
     }
     
+    try {
+        if (!silent) {
+      console.log('[useConfig] Loading config from Supabase...')
+        }
+
     // Load dari API
     const supabaseData = await configApi.getConfig()
-    
+
     if (!silent) {
       console.log('[useConfig] Raw data from Supabase:', supabaseData)
       console.log('[useConfig] logo sistem dari Supabase:', supabaseData['logo sistem'])
@@ -116,7 +127,7 @@ const loadConfig = async (silent = false) => {
 
     // Transform ke format frontend
     const frontendConfig = transformSupabaseToFrontend(supabaseData)
-    
+
     if (!silent) {
       console.log('[useConfig] Transformed config:', frontendConfig)
       console.log('[useConfig] logoUrl setelah transform:', frontendConfig.logoUrl)
@@ -163,57 +174,75 @@ const loadConfig = async (silent = false) => {
   } catch (error) {
     console.error('[useConfig] Error loading config from Supabase:', error)
 
-    // Fallback to localStorage
-    try {
-      const stored = localStorage.getItem(CONFIG_KEY)
-      if (stored) {
-        const parsed = JSON.parse(stored)
-        config.value = { ...DEFAULT_CONFIG, ...parsed }
-        if (!silent) {
-          console.log('[useConfig] Loaded from localStorage fallback')
-        }
 
-        if (config.value.logoDataUrl || config.value.logoUrl) {
-          previewLogo.value = config.value.logoDataUrl || config.value.logoUrl
-          updateFavicon(config.value.faviconDataUrl || config.value.faviconUrl || config.value.logoDataUrl || config.value.logoUrl)
-        }
-      } else {
-        if (!silent) {
-          console.log('[useConfig] No localStorage fallback, using default')
-        }
-        config.value = { ...DEFAULT_CONFIG }
-      }
-    } catch (localError) {
-      console.error('[useConfig] LocalStorage fallback also failed:', localError)
-      config.value = { ...DEFAULT_CONFIG }
-    }
-    
-    return false
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+    return loadFromLocalStorage(silent)
   } finally {
     if (!silent) {
       isLoading.value = false
-      console.log('[useConfig] Load complete. isLoading:', isLoading.value)
-      console.log('[useConfig] Final previewLogo:', previewLogo.value ? 'ADA' : 'KOSONG')
-    }
+
+
   }
+}
+}
+
+// Helper untuk load dari local storage
+const loadFromLocalStorage = (silent) => {
+  try {
+    const stored = localStorage.getItem(CONFIG_KEY)
+    if (stored) {
+      const parsed = JSON.parse(stored)
+      config.value = { ...DEFAULT_CONFIG, ...parsed }
+      if (!silent) console.log('[useConfig] Loaded from localStorage fallback')
+    } else {
+        config.value = { ...DEFAULT_CONFIG }
+    }
+  } catch (localError) {
+    config.value = { ...DEFAULT_CONFIG }
+  }
+  return false
 }
 
 // ✅ Start auto-refresh config
 const startAutoRefresh = () => {
   if (refreshInterval) {
-    console.log('[useConfig] Auto-refresh already running')
     return
   }
   
-  console.log('[useConfig] Starting auto-refresh every', AUTO_REFRESH_INTERVAL / 1000, 'seconds')
-  
+  // Set interval lebih panjang (misal 5 menit) agar tidak spamming dan flicker
   refreshInterval = setInterval(async () => {
-    console.log('[useConfig] Auto-refreshing config...')
-    const hasChanges = await loadConfig(true) // silent = true
-    if (hasChanges) {
-      console.log('[useConfig] Config changed, UI updated')
+
+
+
+    const settings = useSettingsStore()
+    if (settings.isUsingSupabase) {
+      await loadConfig(true)
     }
-  }, AUTO_REFRESH_INTERVAL)
+  }, 300000) // 300 detik = 5 menit
 }
 
 // ✅ Stop auto-refresh
@@ -233,6 +262,12 @@ const refreshConfig = async () => {
 
 // ✅ Save config ke Supabase
 const saveConfig = async () => {
+  const settings = useSettingsStore()
+  if (settings.isUsingGoogleSheets) {
+    localStorage.setItem(CONFIG_KEY, JSON.stringify(config.value))
+    return true
+  }
+
   isSaving.value = true
   try {
     config.value.lastUpdated = new Date().toISOString()
@@ -398,8 +433,12 @@ const updateFavicon = (url) => {
     link.type = 'image/png'
     document.head.appendChild(link)
   }
-  link.href = url
+
+  // ✅ PENTING: Hanya update jika href-nya berbeda agar tidak flicker/reload terus
+  if (link.href !== url) {
+    link.href = url
   console.log('Favicon updated:', url)
+}
 }
 
 // ✅ Update title di browser
@@ -480,3 +519,4 @@ export function useFrontendConfig() {
     updateTitle
   }
 }
+

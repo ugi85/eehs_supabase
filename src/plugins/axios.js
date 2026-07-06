@@ -1,7 +1,7 @@
 import axios from 'axios'
 
 const api = axios.create({
-  timeout: 10000
+  timeout: 30000  // ✅ Increased to 30s for Google Apps Script requests
 })
 
 

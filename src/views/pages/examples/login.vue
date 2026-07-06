@@ -39,12 +39,25 @@ const handleLogin = async () => {
       router.push('/')
     } else {
       error.value = result.message || 'Email atau password salah'
+      
+      // Check if it's a Supabase connection error
+      if (error.value.includes('salah') || !result.message) {
+        error.value = 'Login gagal. Supabase mungkin sedang tidak tersedia. Gunakan Emergency Access sebagai alternatif.'
+      }
+      
       Swal.fire('Error!', error.value, 'error')
     }
   } catch (err) {
     console.error('Login error:', err)
-    error.value = 'Terjadi kesalahan saat login'
-    Swal.fire('Error!', error.value, 'error')
+    error.value = 'Terjadi kesalahan saat login - Supabase mungkin sedang down'
+    Swal.fire({
+      icon: 'error',
+      title: 'Error!',
+      html: `
+        <p>${error.value}</p>
+        <p class="mt-3 text-muted"><small>Jika Supabase sedang tidak tersedia, gunakan Emergency Access untuk mengakses dashboard</small></p>
+      `
+    })
   } finally {
     loading.value = false
   }
@@ -107,6 +120,19 @@ const handleLogin = async () => {
           <p class="mb-1 mt-3">
             <a href="#">I forgot my password</a>
           </p>
+          
+          <!-- Emergency Access Button -->
+          <div class="mt-4 pt-3 border-top">
+            <p class="text-muted text-center mb-2" style="font-size: 0.85rem;">
+              <i class="fas fa-exclamation-triangle"></i> Supabase tidak tersedia?
+            </p>
+            <button
+              @click="$router.push('/emergency-switch')"
+              class="btn btn-outline-danger btn-block btn-sm"
+            >
+              <i class="fas fa-database mr-1"></i>Emergency Access
+            </button>
+          </div>
         </div>
       </div>
     </div>

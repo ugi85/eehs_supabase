@@ -1,8 +1,8 @@
 // src/api/index.js
-// Export all Supabase API modules
+// Export all API modules - with database routing support
 
-export { userApi } from './supabase/userApi'
-export { daftarAlatApi } from './supabase/daftarAlatApi'
+export { userApi } from './users'  // ✅ Router wrapper - routes between Supabase & Google Sheets (NEW)
+export { daftarAlatApi } from './daftarAlatApi'  // ✅ Router wrapper - routes between Supabase & Google Sheets
 export { configApi } from './supabase/configApi'
-export { jadwalKalibrasiApi } from './supabase/jadwalKalibrasiApi'
-export { logAktivitasApi } from './supabase/logAktivitasApi'
+export { jadwalKalibrasiApi } from './jadwalKalibrasi'  // ✅ Router wrapper - routes between Supabase & Google Sheets
+export { logAktivitasApi } from './logAktivitas'  // ✅ Router wrapper - routes between Supabase & Google Sheets

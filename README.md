@@ -41,11 +41,35 @@ Jalankan file SQL berikut di **Supabase SQL Editor** secara berurutan:
 1. `supabase-schema.sql` — skema tabel utama
 2. `add-backlog-columns.sql` — kolom backlog & audit trail
 3. `fix-daftaralat-sequence.sql` — fix sequence kolom `no` di tabel `daftaralat`
+4. `supabase-database-config.sql` — konfigurasi database switch (baru)
 
 ### 4. Jalankan development server
 ```bash
 npm run dev
 ```
+
+---
+
+## Fitur Baru: Database Switch 🔄
+
+Sistem sekarang mendukung **switching antara dua tipe database**:
+- **Supabase (PostgreSQL)** - Database cloud dengan fitur realtime (default)
+- **Google Spreadsheet** - Database berbasis spreadsheet untuk kemudahan akses
+
+### Akses Fitur
+- Hanya **Admin** dan **Superadmin** yang dapat switch database
+- Buka: **Settings > Konfigurasi Sistem > Konfigurasi Database**
+
+### Quick Start
+1. Jalankan migration `supabase-database-config.sql`
+2. Login sebagai Admin
+3. Buka halaman Settings
+4. Pilih database type yang diinginkan
+5. Klik "Switch Database"
+
+### Dokumentasi Lengkap
+- 📘 **Panduan Lengkap (EN)**: [DATABASE_SWITCH_GUIDE.md](./DATABASE_SWITCH_GUIDE.md)
+- 📗 **Panduan Cepat (ID)**: [PANDUAN_SWITCH_DATABASE.md](./PANDUAN_SWITCH_DATABASE.md)
 
 ---
 

@@ -170,12 +170,13 @@ export function useJadwalKalibrasi() {
     }
   }
 
-  // === Auto-refresh (silent — tidak reinit DataTable) ===
+  // === Auto-refresh setiap 1 menit (silent — tidak tampilkan loading, tidak reinit DataTable) ===
   const startAutoRefresh = () => {
     stopAutoRefresh()
     refreshTimer = setInterval(async () => {
       localStorage.removeItem(CACHE_KEY)
-      await fetchList(true, true) // silent — DataTable tetap, data update di background
+      await fetchList(true, true) // silent — data update di background
+      // JANGAN PANGGIL initDataTable() di sini agar tidak flicker
     }, CACHE_DURATION)
   }
 
@@ -203,3 +204,4 @@ export function useJadwalKalibrasi() {
     initDataTable, startAutoRefresh, stopAutoRefresh
   }
 }
+
