@@ -74,20 +74,28 @@ const saveBacklog = async () => {
   savingBacklog.value = true
   try {
     const updatedBy = permission.user.value?.inisial || permission.user.value?.nama || permission.user.value?.email || null
-    const result = await logAktivitasApi.updateBacklog(
-      backlogModal.value.row.log_no,
-      backlogModal.value.status,
-      backlogModal.value.notes,
-      updatedBy
-    )
+
+    // ✅ FIX: Kirim sebagai objek untuk konsistensi API
+    const result = await logAktivitasApi.updateBacklog({
+      no: backlogModal.value.row.log_no,
+      status: backlogModal.value.status,
+      notes: backlogModal.value.notes,
+      updated_by: updatedBy
+    })
+
     backlogModal.value.row.backlog_status = backlogModal.value.status
     backlogModal.value.row.backlog_notes = backlogModal.value.notes
     backlogModal.value.row.backlog_updated_at = new Date().toISOString()
     backlogModal.value.row.backlog_updated_by = updatedBy
-    if (result?.data?.backlog_history) backlogModal.value.row.backlog_history = result.data.backlog_history
+
+    if (result?.data?.backlog_history) {
+      backlogModal.value.row.backlog_history = result.data.backlog_history
+    }
+
     $('#backlogModalKalibrasi').modal('hide')
-    Swal.fire({ icon: 'success', title: 'Berhasil!', text: 'Backlog berhasil disimpan', timer: 1200, showConfirmButton: false })
+    Swal.fire({ icon: 'success', title: 'Berhasil!', text: 'Backlog berhasil disimpan ke database', timer: 1200, showConfirmButton: false })
   } catch (error) {
+    console.error('Error saving backlog:', error)
     Swal.fire({ icon: 'error', title: 'Gagal!', text: error.message || 'Gagal menyimpan backlog' })
   } finally {
     savingBacklog.value = false
@@ -105,38 +113,66 @@ const {
 
 const { users, fetchUsers } = useUsers()
 
-// Helper untuk decode HTML entities dan fix encoding
-const decodeHtmlEntities = (text) => {
-  if (!text) return text
-  
+/**
+ * ✅ OPTIMIZED: Filter log berdasarkan bulan dan tahun
+ * Memastikan kolom backlog ikut ditarik dan dipetakan
+ */
+function getLogsByMonthYear({ month, year }) {
+  if (!month || !year) {
+    throw new Error("Month and year are required");
+  }
+  const { headers, rows } = getLogData();
+  const filteredLogs = [];
+
+  // Dapatkan indeks kolom backlog
+  const backlogStatusIdx = headers.indexOf("backlog_status");
+  const backlogNotesIdx = headers.indexOf("backlog_notes");
+  const backlogUpdatedAtIdx = headers.indexOf("backlog_updated_at");
+  const backlogUpdatedByIdx = headers.indexOf("backlog_updated_by");
+
+  for (let i = 0; i < rows.length; i++) {
+    const row = rows[i];
+    const log = rowToObject(headers, row, LOG_HEADER_MAP);
+
+    // Pastikan data backlog dari spreadsheet masuk ke objek log
+    if (backlogStatusIdx !== -1) log.backlog_status = row[backlogStatusIdx];
+    if (backlogNotesIdx !== -1) log.backlog_notes = row[backlogNotesIdx];
+    if (backlogUpdatedAtIdx !== -1) log.backlog_updated_at = row[backlogUpdatedAtIdx];
+    if (backlogUpdatedByIdx !== -1) log.backlog_updated_by = row[backlogUpdatedByIdx];
+
+    if (!log.tanggal) continue;
+    try {
+      const date = new Date(log.tanggal);
+      if (isNaN(date.getTime())) continue;
+      const logYear = date.getFullYear().toString();
+      const logMonth = Utilities.formatDate(date, Session.getScriptTimeZone(), "MMMM");
+      if (logMonth === month && logYear === year) {
+        filteredLogs.push(enrichLogWithAlatData(log));
+      }
+  } catch (e) {
+      continue;
+  }
+}
+  return { data: filteredLogs };
+}
+
+// ✅ Fungsi untuk fix encoding simbol khusus - DISERAGAMKAN
+const fixEncoding = (text) => {
+  if (text === null || text === undefined) return '—'
   let fixed = String(text)
-  
-  // Fix degree symbol (°C, °F) - PRIORITAS PERTAMA
-  fixed = fixed
-    .replace(/�\s*C/gi, '°C')
-    .replace(/�C/gi, '°C')
-    .replace(/�\s*F/gi, '°F')
-    .replace(/�F/gi, '°F')
-    .replace(/\?\s*C/gi, '°C')
-    .replace(/\?C/gi, '°C')
-    .replace(/\?\s*F/gi, '°F')
-    .replace(/\?F/gi, '°F')
-  
-  // Fix plus-minus symbol (± angka) - SETELAH DEGREE
-  fixed = fixed
-    .replace(/�\s*\d/g, (match) => match.replace('�', '±'))
-    .replace(/\?\s*\d/g, (match) => match.replace('?', '±'))
-  
-  // HTML entities
-  fixed = fixed
+
+  return fixed
     .replace(/&plusmn;/g, '±')
     .replace(/&#177;/g, '±')
     .replace(/&deg;/g, '°')
     .replace(/&#176;/g, '°')
     .replace(/&micro;/g, 'µ')
     .replace(/&#181;/g, 'µ')
-  
-  return fixed
+    .replace(/\?\s*C/gi, '°C')
+    .replace(/\?C/gi, '°C')
+    .replace(/\?\s*F/gi, '°F')
+    .replace(/\?F/gi, '°F')
+    .replace(/\?\s*\d/g, (match) => match.replace('?', '±'))
 }
 
 // Computed untuk permission checks
@@ -157,14 +193,14 @@ const showObsolete = ref(true) // Toggle untuk show/hide data obsolete
 
 const filteredLogs = computed(() => {
   let result = logs.value
-  
+
   // Filter by status
   if (statusFilter.value === 'selesai') result = result.filter(r => r.status === 'Selesai')
   if (statusFilter.value === 'belum') result = result.filter(r => r.status !== 'Selesai')
 
   // Filter by obsolete status
   if (!showObsolete.value) result = result.filter(r => r.equipment_status !== 'obsolete')
-  
+
   // Filter by search query
   if (searchQuery.value) {
     const q = searchQuery.value.toLowerCase()
@@ -183,7 +219,7 @@ const filteredLogs = computed(() => {
       )
     })
   }
-  
+
   return result
 })
 
@@ -229,8 +265,7 @@ const selectUser = (row, userValue) => {
   row.pic = userValue
   openDropdownId.value = null
 }
-
-// Close dropdown saat klik di luar
+  // Close dropdown saat klik di luar
 const closeAllDropdowns = () => {
   openDropdownId.value = null
 }
@@ -257,12 +292,12 @@ const years = ['2025', '2026', '2027', '2028', '2029', '2030']
 // ✅ FUNGSI FORMAT TANGGAL SAMA DENGAN LOG PM
 function formatDateDisplay(dateString) {
   if (!dateString) return ''
-  
+
   if (/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
     const [year, month, day] = dateString.split('-')
     return `${day}/${month}/${year}`
   }
-  
+
   try {
     const date = new Date(dateString)
     if (!isNaN(date.getTime())) {
@@ -274,7 +309,7 @@ function formatDateDisplay(dateString) {
   } catch (e) {
     // Ignore error
   }
-  
+
   return dateString
 }
 
@@ -285,16 +320,16 @@ const handleSearch = async () => {
       title: 'Peringatan!',
       text: 'Pilih bulan dan tahun terlebih dahulu',
       confirmButtonText: 'OK'
-    })
+})
     return
   }
-  
+
   dataLoaded.value = true
   loading.value = true
-  
+
   try {
     await fetchData()
-    
+
     if (logs.value.length === 0) {
       Swal.fire({
         icon: 'info',
@@ -303,10 +338,10 @@ const handleSearch = async () => {
         confirmButtonText: 'OK'
       })
     }
-    
+
   } catch (error) {
     console.error('❌ Error:', error)
-    
+
     Swal.fire({
       icon: 'error',
       title: 'Gagal!',
@@ -352,9 +387,9 @@ const saveToLogAktivitas = async (row) => {
 
   const rowKey = `${row['No.ID']}_${row['Calibration Id.']}`
   if (savingRows.value.has(rowKey)) return
-  
+
   savingRows.value.add(rowKey) // ✅ HANYA BLOCK BUTTON INI
-  
+
   try {
     // ✅ LANGSUNG PANGGIL API (TANPA LEWAT COMPOSABLE)
     const response = await logAktivitasApi.createLog({
@@ -377,9 +412,9 @@ const saveToLogAktivitas = async (row) => {
       timer: 1200,
       showConfirmButton: false
     })
-    
+
     // ❌ TIDAK ADA: loading.value, fetchData(), atau setTimeout
-    
+
   } catch (error) {
     console.error('❌ Gagal simpan:', error)
     Swal.fire({
@@ -403,7 +438,7 @@ const preventFormSubmit = (event) => {
 onMounted(async () => {
   selectedMonth.value = 'January'
   selectedYear.value = new Date().getFullYear().toString()
-  
+
   // Fetch users untuk dropdown PIC
   usersLoading.value = true
   try {
@@ -413,7 +448,7 @@ onMounted(async () => {
   } finally {
     usersLoading.value = false
   }
-  
+
   // Close dropdown saat klik di luar
   document.addEventListener('click', closeAllDropdowns)
 })
@@ -495,28 +530,12 @@ onMounted(async () => {
 
     <section class="content">
       <div class="container-fluid">
-        <!-- print-only big header -->
-        <!-- <div class="print-header d-none">
-          <div class="company-logo">AGIS</div>
-          <div class="company-name">PT. AGIS INSTRUMENT SERVICES</div>
-          <div class="company-address">Jl. Raya Industri No. 123, Kawasan Industri MM2100</div>
-          <div class="company-address">Cikarang Barat, Bekasi 17520 - Indonesia</div>
-          <div class="company-address">Telp: (021) 897-1234 | Email: info@agis.co.id</div>
-          <h1 class="report-title">LAPORAN LOG KALIBRASI</h1>
-          <div class="report-subtitle">No. Reff: AGIS-WI-ENG-016-LD1_v5.0</div>
-          <div class="report-period">
-            Periode: {{ selectedMonth }} {{ selectedYear }}
-          </div>
-        </div> -->
         <div class="card">
           <div class="card-body">
             <div v-if="!dataLoaded" class="text-center py-5">
               <i class="fas fa-calendar-alt fa-3x text-muted mb-3"></i>
               <p class="text-muted mt-3">Pilih bulan dan tahun, lalu klik "Cari Data"</p>
             </div>
-
-            <!-- ✅ HAPUS KONDISI LOADING GLOBAL - TIDAK DIPERLUKAN LAGI -->
-            <!-- <div v-else-if="loading" class="text-center py-4"> ... </div> -->
 
             <div v-else-if="logs.length > 0">
               <div class="table-responsive">
@@ -552,8 +571,8 @@ onMounted(async () => {
                       <td>{{ row.Description }}</td>
                       <td>{{ row['Calibration Id.'] }}</td>
                       <td>{{ row.Parameter }}</td>
-                      <td>{{ decodeHtmlEntities(row['Process Range']) }}</td>
-                      <td>{{ decodeHtmlEntities(row['Reject Error Limit']) }}</td>
+                      <td>{{ fixEncoding(row['Process Range']) }}</td>
+                      <td>{{ fixEncoding(row['Reject Error Limit']) }}</td>
                       <td class="text-center">{{ row['Due Date'] }}</td>
                       <td class="text-center">{{ row['Remark'] }}</td>
                       
@@ -689,7 +708,6 @@ onMounted(async () => {
               </div>
             </div>
 
-            <!-- ✅ HANYA TAMPILKAN LOADING SAAT SEDANG MEMUAT DATA -->
               <div v-if="loading && dataLoaded" class="text-center py-4">
                 <div class="spinner-border text-primary" role="status">
                   <span class="sr-only">Loading...</span>
@@ -782,198 +800,33 @@ onMounted(async () => {
   overflow-x: auto;
 }
 
+/* 🔥 Perbaikan: Konsistensi gaya tabel Kalibrasi dengan tabel PM */
+.table {
+  font-size: 0.85rem !important; /* Ukuran font lebih kecil agar konsisten */
+}
+
 .table thead th {
   background-color: #f0f4f7;
   font-weight: 600;
-  white-space: normal;
-  word-wrap: break-word;
-  overflow-wrap: break-word;
-  max-width: 150px;
-  vertical-align: middle;
+  white-space: nowrap;
+  vertical-align: middle !important;
 }
 
 .table tbody td {
-  white-space: normal;
-  word-wrap: break-word;
-  overflow-wrap: break-word;
-  vertical-align: middle;
+  vertical-align: middle !important;
 }
 
-.table tbody tr.table-success { 
-  background-color: #d4edda !important; 
+/* Lebar kolom spesifik agar rapi */
+.table th, .table td {
+  padding: 0.5rem !important;
 }
 
-.badge { 
-  padding: 0.4em 0.8em; 
-  border-radius: 0.25rem; 
-  font-size: 0.85em; 
-  font-weight: 500; 
+.table tbody tr.table-success {
+  background-color: #d4edda !important;
 }
 
-.badge-success { 
-  background-color: #28a745; 
-  color: white; 
-}
-
-.badge-danger { 
-  background-color: #dc3545; 
-  color: white; 
-}
-
-.btn { 
-  cursor: pointer; 
-}
-
-.btn:disabled { 
-  opacity: 0.65; 
-  cursor: not-allowed; 
-}
-
-.btn-warning { 
-  background-color: #ffc107; 
-  border-color: #ffc107; 
-  color: #212529; 
-}
-
-.btn-warning:hover:not(:disabled) { 
-  background-color: #e0a800; 
-  border-color: #d39e00; 
-}
-
-.btn-success {
-  background-color: #28a745;
-  border-color: #28a745;
-}
-
-.btn-success:hover:not(:disabled) {
-  background-color: #218838;
-  border-color: #1e7e34;
-}
-
-.spinner-border { 
-  width: 1rem; 
-  height: 1rem; 
-  border-width: 0.2em; 
-}
-
-.table td.text-center,
-.table th.text-center {
-  text-align: center;
-  vertical-align: middle;
-}
-
-/* Custom dropdown untuk PIC */
-.dropdown-container {
-  position: relative;
-}
-
-.dropdown-container button {
-  text-align: left;
-  position: relative;
-}
-
-.dropdown-container button .float-right {
-  float: right;
-  font-size: 0.7em;
-  margin-top: 3px;
-}
-
-.dropdown-menu.show {
-  background-color: white;
-  border: 1px solid #ced4da;
-  border-radius: 0.25rem;
-  box-shadow: 0 0.5rem 1rem rgba(0, 0, 0, 0.15);
-  width: 100%;
-  min-width: 150px;
-  margin-top: 2px;
-}
-
-.dropdown-menu.show .dropdown-item:hover {
-  background-color: #f8f9fa;
-}
-
-.text-left {
-  text-align: left !important;
-}
-
-.table-sm {
-  font-size: 0.875rem;
-}
-
-.table-sm th,
-.table-sm td {
-  padding: 0.5rem;
-  vertical-align: middle;
-}
-
-.form-control-sm {
-  padding: 0.25rem 0.5rem;
-  font-size: 0.875rem;
-  white-space: normal;
-  word-wrap: break-word;
-  overflow-wrap: break-word;
-  height: auto;
-  min-height: 31px;
-}
-
-.form-control-sm.text-center {
-  text-align: center;
-}
-
-/* Khusus input PIC dan Keterangan agar bisa wrap */
-td:has(.form-control-sm) {
-  vertical-align: top;
-}
-
-/* print-specific helpers */
-@media print {
-  /* request landscape orientation */
-  @page {
-    size: landscape;
-    margin: 10mm;
-  }
-
-  .no-print {
-    display: none !important;
-  }
-  .table-responsive {
-    overflow: visible !important;
-  }
-  /* enlarge footer or adjust spacing if needed */
-
-  /* show custom header when printing */
-  .print-header.d-none {
-    display: block !important;
-  }
-  .print-header {
-    text-align: center;
-    margin-bottom: 20px;
-  }
-  .print-header .company-logo {
-    font-size: 28px;
-    font-weight: bold;
-    color: #003366;
-  }
-  .print-header .company-name {
-    font-size: 24px;
-    font-weight: bold;
-    color: #003366;
-  }
-  .print-header .company-address {
-    font-size: 12px;
-    color: #555;
-    line-height: 1.3;
-  }
-  .print-header .report-title {
-    margin-top: 10px;
-    font-size: 22px;
-    color: #0056b3;
-    font-weight: bold;
-  }
-  .print-header .report-subtitle,
-  .print-header .report-period {
-    font-size: 14px;
-    color: #666;
-  }
+.badge {
+  font-size: 0.75rem;
 }
 </style>
+

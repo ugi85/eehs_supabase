@@ -13,10 +13,10 @@ onMounted(() => {
   // Inisialisasi database dari localstorage
   settings.initializeDatabase()
 
-  // Cek status database ke API Sheets setiap 60 detik agar sinkron antar device
+  // Cek status database ke API Sheets setiap 5 menit agar sinkron antar device
   setInterval(() => {
     settings.checkRemoteConfig()
-  }, 60000)
+  }, 300000)
 })
 </script>
 

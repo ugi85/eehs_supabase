@@ -94,8 +94,16 @@ export function useUsers() {
     }
 
     try {
+      // Panggil readUsers()
       const result = await userApi.readUsers()
-      users.value = result.data || []
+
+      // Karena readUsers() di userApi.js sudah mengembalikan result.data || []
+      // Maka result di sini adalah array datanya langsung
+      console.log('[useUsers] API readUsers result:', result)
+
+      users.value = Array.isArray(result) ? result : []
+      console.log('[useUsers] users state:', users.value)
+
       localStorage.setItem(
         CACHE_KEY,
         JSON.stringify({ data: users.value, timestamp: now })
@@ -255,3 +263,4 @@ export function useUsers() {
     changePassword
   }
 }
+

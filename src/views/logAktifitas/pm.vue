@@ -66,20 +66,27 @@ const saveBacklog = async () => {
   savingBacklog.value = true
   try {
     const updatedBy = permission.user.value?.inisial || permission.user.value?.nama || permission.user.value?.email || null
-    const result = await logAktivitasApi.updateBacklog(
-      backlogModal.value.row.log_no,
-      backlogModal.value.status,
-      backlogModal.value.notes,
-      updatedBy
-    )
+
+    // ✅ FIX: Kirim sebagai objek untuk konsistensi API
+    const result = await logAktivitasApi.updateBacklog({
+      no: backlogModal.value.row.log_no,
+      status: backlogModal.value.status,
+      notes: backlogModal.value.notes,
+      updated_by: updatedBy
+    })
     backlogModal.value.row.backlog_status = backlogModal.value.status
     backlogModal.value.row.backlog_notes = backlogModal.value.notes
     backlogModal.value.row.backlog_updated_at = new Date().toISOString()
     backlogModal.value.row.backlog_updated_by = updatedBy
-    if (result?.data?.backlog_history) backlogModal.value.row.backlog_history = result.data.backlog_history
+
+    if (result?.data?.backlog_history) {
+      backlogModal.value.row.backlog_history = result.data.backlog_history
+    }
+
     $('#backlogModalPM').modal('hide')
-    Swal.fire({ icon: 'success', title: 'Berhasil!', text: 'Backlog berhasil disimpan', timer: 1200, showConfirmButton: false })
+    Swal.fire({ icon: 'success', title: 'Berhasil!', text: 'Backlog berhasil disimpan ke database', timer: 1200, showConfirmButton: false })
   } catch (error) {
+    console.error('Error saving backlog:', error)
     Swal.fire({ icon: 'error', title: 'Gagal!', text: error.message || 'Gagal menyimpan backlog' })
   } finally {
     savingBacklog.value = false

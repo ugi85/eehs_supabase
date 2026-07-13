@@ -1,23 +1,22 @@
 // src/api/daftarAlatApi.js
 import api from '@/plugins/axios'
 import { useSettingsStore } from '@/stores/settings'
-import { daftarAlatApi as supabaseDaftarAlatApi } from '@/api/supabase/daftarAlatApi'
+
+function toFormData(data) {
+  const params = new URLSearchParams()
+  Object.entries(data).forEach(([key, value]) => {
+    if (value !== undefined && value !== null) {
+      params.append(key, String(value))
+    }
+  })
+  return params
+}
 
 export const daftarAlatApi = {
   async fetchList(statusFilter = 'active') {
     const settings = useSettingsStore()
     
-    if (settings.isUsingSupabase) {
-      try {
-        console.log('[daftarAlatApi] Attempting Supabase...')
-        return await supabaseDaftarAlatApi.fetchList(statusFilter)
-    } catch (error) {
-        console.warn('[daftarAlatApi] Supabase gagal, mencoba failover ke Google Sheets...')
-        settings.switchToGoogleSheets()
-    }
-    }
-
-    // If using Google Sheets, use Google Apps Script
+    // Always use Google Sheets
     console.log('[daftarAlatApi] Using Google Sheets')
     try {
       const { data } = await api.get(settings.api.daftarAlat, {
@@ -33,9 +32,6 @@ export const daftarAlatApi = {
   async getToolByNo(no) {
     const settings = useSettingsStore()
     
-    if (settings.isUsingSupabase) {
-        return await supabaseDaftarAlatApi.getToolByNo(no)
-    }
     try {
       const { data } = await api.get(settings.api.daftarAlat, {
         params: { action: 'get', no }
@@ -50,17 +46,16 @@ export const daftarAlatApi = {
   async saveTool(tool) {
     const settings = useSettingsStore()
 
-    if (settings.isUsingSupabase) {
-        return await supabaseDaftarAlatApi.create(tool)
-}
     try {
       const action = tool.no ? 'update' : 'create'
-      const { data } = await api.post(settings.api.daftarAlat, {
+
+      // Menggunakan toFormData agar konsisten dengan referensi web yang berhasil
+      const payload = toFormData({
         action,
         ...tool
-      }, {
-        headers: { 'Content-Type': 'application/json' }
       })
+
+      const { data } = await api.post(settings.api.daftarAlat, payload)
 
       if (!data.success) throw new Error(data.message || 'Gagal menyimpan')
       return data
@@ -73,17 +68,12 @@ export const daftarAlatApi = {
   async deleteTool(no) {
     const settings = useSettingsStore()
 
-    if (settings.isUsingSupabase) {
-      return await supabaseDaftarAlatApi.delete(no)
-}
-
     try {
-      const { data } = await api.post(settings.api.daftarAlat, {
+      const payload = toFormData({
         action: 'delete',
         no: no
-      }, {
-        headers: { 'Content-Type': 'application/json' }
       })
+      const { data } = await api.post(settings.api.daftarAlat, payload)
       return data
     } catch (error) {
       console.error('[daftarAlatApi] Gagal delete tool:', error)
@@ -91,23 +81,36 @@ export const daftarAlatApi = {
     }
   },
 
-  // ✅ BARU: Tambahan fungsi untuk import batch
-  async upsertBatch(tools) {
+  // ✅ PERBAIKAN: Gunakan chunking untuk mencegah Network Error (Too many requests)
+  async upsertBatch(tools, mode = 'upsert') {
     const settings = useSettingsStore()
+    const CHUNK_SIZE = 5 // Kirim 5-5 agar tidak overload
+    const results = []
 
-    if (settings.isUsingSupabase) {
-      return await supabaseDaftarAlatApi.upsertBatch(tools)
+    console.log(`[daftarAlatApi] Upsert Batch (Chunked ${CHUNK_SIZE}, mode: ${mode}) ke Google Sheets...`)
+
+    for (let i = 0; i < tools.length; i += CHUNK_SIZE) {
+      const chunk = tools.slice(i, i + CHUNK_SIZE)
+      const chunkResults = await Promise.all(chunk.map(async (tool) => {
+        try {
+          const payload = toFormData({
+            action: mode === 'insert_only' ? 'create' : 'upsert',
+            ...tool
+          })
+          const { data } = await api.post(settings.api.daftarAlat, payload)
+          return { success: data.success, action: data.action || 'inserted', no_id: tool.no_id, ...data }
+        } catch (e) {
+          return { success: false, no_id: tool.no_id, error: 'Network Error' }
+        }
+      }))
+
+      results.push(...chunkResults)
+
+      // Jeda singkat antar chunk untuk memberi nafas ke Google Sheets API
+      await new Promise(resolve => setTimeout(resolve, 1000))
     }
 
-    // Fallback: Loop saveTool jika upsertBatch tidak ada di GAS
-    console.log('[daftarAlatApi] Upsert Batch (Sequential) ke Google Sheets...')
-    try {
-      const results = await Promise.all(tools.map(tool => this.saveTool(tool)))
-      return { success: true, count: results.length }
-    } catch (error) {
-      console.error('[daftarAlatApi] Error upsertBatch:', error)
-      throw error
-    }
+    return results
   }
 }
 

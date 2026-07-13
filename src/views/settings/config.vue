@@ -52,219 +52,95 @@
                     placeholder="2.1.0"
                   />
                 </div>
-
-                <!-- Data Versioning Management -->
-                <div class="card card-info mt-4">
-                  <div class="card-header">
-                    <h3 class="card-title"><i class="fas fa-code-branch mr-2"></i>Manajemen Versi Data</h3>
-                    <div class="card-tools">
-                      <button type="button" class="btn btn-tool" data-card-widget="collapse">
-                        <i class="fas fa-minus"></i>
-                      </button>
-                    </div>
-                  </div>
-                  <div class="card-body">
-                    <div class="form-group">
-                      <label>Deskripsi Versi Baru</label>
-                      <input 
-                        v-model="newVersionDescription" 
-                        type="text" 
-                        class="form-control" 
-                        placeholder="Update jadwal kalibrasi Mei 2026"
-                      />
-                      <small class="form-text text-muted">
-                        Deskripsi perubahan data yang akan di-snapshot sebagai versi baru
-                      </small>
-                    </div>
-                    <button 
-                      @click="createNewVersion" 
-                      class="btn btn-success"
-                      :disabled="versioningLoading || !newVersionDescription.trim()"
-                    >
-                      <span v-if="versioningLoading">
-                        <span class="spinner-border spinner-border-sm mr-1"></span>
-                        Membuat Versi...
-                      </span>
-                      <span v-else>
-                        <i class="fas fa-plus mr-1"></i>Buat Versi Data Baru
-                      </span>
-                    </button>
-
-                    <!-- Tambahan Fitur Sync -->
-                    <div class="card card-primary mt-4">
-                      <div class="card-header">
-                        <h3 class="card-title"><i class="fas fa-sync mr-2"></i>Sinkronisasi Data</h3>
-                      </div>
-                      <div class="card-body">
-                        <p>Gunakan fitur ini jika data di Google Sheets lebih baru daripada di Supabase.</p>
-                        <button @click="handleSync" class="btn btn-primary" :disabled="syncing">
-                          <i class="fas fa-arrow-down mr-1"></i> {{ syncing ? 'Sinkronisasi...' : 'Sync Sheets ke Supabase' }}
-                        </button>
-                      </div>
-                    </div>
-                    <!-- Version History -->
-                    <div class="mt-4" v-if="versions.length > 0">
-                      <h5>Riwayat Versi Data</h5>
-                      <div class="table-responsive">
-                        <table class="table table-sm table-bordered">
-                          <thead>
-                            <tr>
-                              <th>Versi</th>
-                              <th>Tanggal</th>
-                              <th>Deskripsi</th>
-                              <th>Status</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            <tr v-for="version in versions" :key="version.version_id">
-                              <td>{{ version.version_name }}</td>
-                              <td>{{ formatDate(version.snapshot_date) }}</td>
-                              <td>{{ version.description }}</td>
-                              <td>
-                                <span class="badge" :class="version.is_active ? 'badge-success' : 'badge-secondary'">
-                                  {{ version.is_active ? 'Aktif' : 'Tidak Aktif' }}
-                                </span>
-                              </td>
-                            </tr>
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                  </div>
-                </div>
-
-                <!-- Database Configuration Switch (Admin Only) -->
-                <div class="card card-danger mt-4" v-if="isAdmin">
-                  <div class="card-header">
-                    <h3 class="card-title">
-                      <i class="fas fa-database mr-2"></i>Konfigurasi Database
-                      <span class="badge badge-warning ml-2">Admin Only</span>
-                    </h3>
-                    <div class="card-tools">
-                  <button type="button" class="btn btn-tool" data-card-widget="collapse">
-                    <i class="fas fa-minus"></i>
-                  </button>
-                </div>
-                  </div>
-                  <div class="card-body">
-                    <!-- Current Database Status -->
-                    <div class="alert" :class="isUsingSupabase ? 'alert-info' : 'alert-warning'">
-                      <h5><i class="fas fa-info-circle mr-2"></i>Database Saat Ini</h5>
-                      <p class="mb-0">
-                        <strong>{{ currentDatabaseName }}</strong>
-                        <span v-if="isUsingSpreadsheet && spreadsheetInfo">
-                          - <a :href="spreadsheetInfo.url" target="_blank" class="text-primary">
-                            <i class="fas fa-external-link-alt"></i> Buka Spreadsheet
-                          </a>
-                        </span>
-                      </p>
-                      <small class="text-muted">
-                        Status: {{ isUsingSupabase ? 'Aktif (Supabase)' : 'Aktif (Emergency/Google Sheets)' }}
-                      </small>
-                    </div>
-
-                    <!-- Switch Database Form -->
-                    <div class="form-group">
-                      <label>Pilih Tipe Database</label>
-                      <select
-                        v-model="databaseSwitchForm.database_type"
-                        class="form-control"
-                        :disabled="isSwitching"
-                      >
-                        <option value="supabase">Supabase (PostgreSQL)</option>
-                        <option value="spreadsheet">Google Spreadsheet</option>
-                      </select>
-                      <small class="form-text text-muted">
-                        <i class="fas fa-exclamation-triangle text-warning"></i> 
-                        Mengubah database akan memuat ulang halaman
-                      </small>
-                    </div>
-
-                    <!-- Spreadsheet Settings (OPTIONAL - endpoints pre-configured) -->
-                    <div v-if="databaseSwitchForm.database_type === 'spreadsheet'" class="border-left border-info pl-3 mb-3">
-                      <div class="alert alert-info mb-3">
-                        <small>
-                          <i class="fas fa-check-circle mr-1"></i>
-                          <strong>Endpoint Google Apps Script sudah ter-konfigurasi.</strong> Anda bisa langsung switch tanpa perlu memasukan ID atau URL spreadsheet.
-                        </small>
-                      </div>
-                    </div>
-                    <div class="form-group">
-                      <label>Catatan Perubahan</label>
-                      <textarea
-                        v-model="databaseSwitchForm.notes"
-                        class="form-control"
-                        rows="2"
-                        placeholder="Alasan switch database..."
-                        :disabled="isSwitching"
-                      ></textarea>
-                    </div>
-                    <!-- Switch Button -->
-                    <div class="d-flex justify-content-between align-items-center">
-                <button
-                        @click="handleSwitchDatabase"
-                        class="btn btn-danger"
-                        :disabled="isSwitching"
-                      >
-                        <span v-if="isSwitching">
-                          <span class="spinner-border spinner-border-sm mr-1"></span>
-                          Switching...
-                        </span>
-                        <span v-else>
-                          <i class="fas fa-sync-alt mr-1"></i>Switch Database
-                        </span>
-                      </button>
-                      <small class="text-danger">
-                        <i class="fas fa-exclamation-circle"></i> 
-                        Pastikan data sudah di-backup!
-                      </small>
-                    </div>
-
-                    <!-- Database History -->
-                    <div class="mt-4" v-if="allConfigs.length > 0">
-                      <h5>Riwayat Konfigurasi Database</h5>
-                      <div class="table-responsive">
-                        <table class="table table-sm table-bordered">
-                          <thead>
-                            <tr>
-                              <th>Tipe</th>
-                              <th>Tanggal</th>
-                              <th>Oleh</th>
-                              <th>Status</th>
-                            </tr>
-                          </thead>
-                          <tbody>
-                            <tr v-for="cfg in allConfigs" :key="cfg.id">
-                              <td>
-                                <span class="badge" :class="cfg.database_type === 'supabase' ? 'badge-info' : 'badge-warning'">
-                                  {{ cfg.database_type }}
-                                </span>
-                              </td>
-                              <td>{{ formatDate(cfg.updated_at) }}</td>
-                              <td>{{ cfg.updated_by || '-' }}</td>
-                              <td>
-                                <span class="badge" :class="cfg.is_active ? 'badge-success' : 'badge-secondary'">
-                                  {{ cfg.is_active ? 'Aktif' : 'Tidak Aktif' }}
-                                </span>
-                              </td>
-                            </tr>
-                          </tbody>
-                        </table>
-                      </div>
-                    </div>
-                </div>
-                </div>
-
+                
                 <!-- Perusahaan -->
                 <div class="form-group">
                   <label>Nama Perusahaan</label>
-                  <input
-                    v-model="draft.companyName"
-                    type="text"
-                    class="form-control"
+                  <input 
+                    v-model="draft.companyName" 
+                    type="text" 
+                    class="form-control" 
                     placeholder="PT. AGIS SISTEM INDONESIA"
                   />
                 </div>
+                <!-- <div class="form-group">
+                  <label>Alamat Baris 1</label>
+                  <input 
+                    v-model="draft.addressLine1" 
+                    type="text" 
+                    class="form-control" 
+                    placeholder="Jl. Raya Industri No. 123"
+                  />
+                </div>
+                <div class="form-group">
+                  <label>Alamat Baris 2</label>
+                  <input 
+                    v-model="draft.addressLine2" 
+                    type="text" 
+                    class="form-control" 
+                    placeholder="Kawasan Industri MM2100"
+                  />
+                </div>
+                <div class="form-row">
+                  <div class="form-group col-md-6">
+                    <label>Kota</label>
+                    <input 
+                      v-model="draft.city" 
+                      type="text" 
+                      class="form-control" 
+                      placeholder="Cikarang Barat"
+                    />
+                  </div>
+                  <div class="form-group col-md-6">
+                    <label>Kode Pos</label>
+                    <input 
+                      v-model="draft.postalCode" 
+                      type="text" 
+                      class="form-control" 
+                      placeholder="17520"
+                    />
+                  </div>
+                </div>
+                <div class="form-row">
+                  <div class="form-group col-md-6">
+                    <label>Provinsi</label>
+                    <input 
+                      v-model="draft.province" 
+                      type="text" 
+                      class="form-control" 
+                      placeholder="Bekasi"
+                    />
+                  </div>
+                  <div class="form-group col-md-6">
+                    <label>Negara</label>
+                    <input 
+                      v-model="draft.country" 
+                      type="text" 
+                      class="form-control" 
+                      placeholder="Indonesia"
+                    />
+                  </div>
+                </div>
+                <div class="form-row">
+                  <div class="form-group col-md-6">
+                    <label>Telepon</label>
+                    <input 
+                      v-model="draft.phone" 
+                      type="text" 
+                      class="form-control" 
+                      placeholder="(021) 897-1234"
+                    />
+                  </div>
+                  <div class="form-group col-md-6">
+                    <label>Email</label>
+                    <input 
+                      v-model="draft.email" 
+                      type="email" 
+                      class="form-control" 
+                      placeholder="info@agis.co.id"
+                    />
+                  </div>
+                </div> -->
              <!-- DUA JENIS NO. REFERENSI -->
                 <div class="card card-warning mt-4">
                   <div class="card-header">
@@ -278,10 +154,10 @@
                   <div class="card-body">
                     <div class="form-group">
                       <label>No. Referensi Daftar Alat</label>
-                      <input
-                        v-model="draft.documentRefEquipment"
-                        type="text"
-                        class="form-control"
+                      <input 
+                        v-model="draft.documentRefEquipment" 
+                        type="text" 
+                        class="form-control" 
                         placeholder="AGIS-WI-ENG-001-LD1_v5.0"
                       />
                       <small class="form-text text-muted">
@@ -290,17 +166,17 @@
                     </div>
                     <div class="form-group">
                       <label>No. Referensi Jadwal Kalibrasi</label>
-                      <input
-                        v-model="draft.documentRefCalibration"
-                        type="text"
-                        class="form-control"
+                      <input 
+                        v-model="draft.documentRefCalibration" 
+                        type="text" 
+                        class="form-control" 
                         placeholder="AGIS-WI-ENG-016-LD1_v5.0"
                       />
                       <small class="form-text text-muted">
                         Contoh: AGIS-WI-ENG-016-LD1_v5.0 (untuk Jadwal Kalibrasi)
                       </small>
-              </div>
                     </div>
+                  </div>
                 </div>
               </div>
             </div>
@@ -309,15 +185,15 @@
             <div class="card card-secondary mt-4">
               <div class="card-body">
                 <div class="d-flex justify-content-between">
-                  <button
-                    @click="resetConfig"
+                  <button 
+                    @click="resetConfig" 
                     class="btn btn-danger"
                     :disabled="isSaving"
                   >
                     <i class="fas fa-undo mr-1"></i>Reset Default
                   </button>
-                  <button
-                    @click="confirmAndSave"
+                  <button 
+                    @click="confirmAndSave" 
                     class="btn btn-primary"
                     :disabled="isSaving"
                   >
@@ -336,8 +212,8 @@
                 </div>
               </div>
             </div>
+            
            
-
           </div>
           
           <!-- Preview & Logo -->
@@ -354,9 +230,9 @@
               </div>
               <div class="card-body text-center">
                 <div class="logo-preview mx-auto mb-3">
-                  <img
-                    :src="draftLogo || getLogoUrl"
-                    alt="Logo Preview"
+                  <img 
+                    :src="draftLogo || getLogoUrl" 
+                    alt="Logo Preview" 
                     class="img-fluid"
                   />
                 </div>
@@ -432,20 +308,205 @@
               </div>
             </div>
 
+            <!-- Preview Print Header -->
+            <!-- <div class="card card-success mt-4">
+              <div class="card-header">
+                <h3 class="card-title"><i class="fas fa-eye mr-2"></i>Preview Header Print</h3>
+                <div class="card-tools">
+                  <button type="button" class="btn btn-tool" data-card-widget="collapse">
+                    <i class="fas fa-minus"></i>
+                  </button>
                 </div>
               </div>
+              <div class="card-body">
+                <div
+                  class="print-preview"
+                  :style="{
+                    fontFamily: draft.print.fontFamily,
+                    padding: draft.print.margin,
+                    overflow: 'auto',
+                    maxHeight: '400px',
+                    boxSizing: 'border-box'
+                  }"
+                >
+                  <div class="preview-header-new" :style="{ height: draft.print.headerHeight }">
+                    <div class="preview-company-name" :style="{ 
+                      textAlign: 'center', 
+                      fontSize: '18px', 
+                      fontWeight: 'bold',
+                      marginBottom: '5px'
+                    }">
+                      {{ draft.companyName }}
                     </div>
+                    
+                    <div class="preview-doc-info" style="display: flex; justify-content: space-between; margin-bottom: '5px'">
+                      <div class="preview-doc-title" :style="{ 
+                        fontSize: '14px', 
+                        fontWeight: 'bold',
+                        flex: '1'
+                      }">
+                        Judul Dokumen : Daftar Peralatan dan Jadwal Perawatannya
+                      </div>
+                      <div class="preview-doc-number" :style="{ 
+                        fontSize: '14px',
+                        textAlign: 'right'
+                      }">
+                        Nomor Dokumen : {{ draft.documentRefEquipment }}
+                      </div>
+                    </div>
+                    
+                    <div class="preview-table-header" :style="{ 
+                      fontSize: '10px',
+                      borderTop: '1px solid #000',
+                      borderBottom: '1px solid #000',
+                      padding: '3px 0'
+                    }">
+                      <table style="width: 100%; border-collapse: collapse;">
+                        <thead>
+                          <tr>
+                            <th style="border: 1px solid #000; padding: 2px;">No.</th>
+                            <th style="border: 1px solid #000; padding: 2px;">No. ID</th>
+                            <th style="border: 1px solid #000; padding: 2px;">Description</th>
+                            <th style="border: 1px solid #000; padding: 2px;">Type/Model</th>
+                            <th style="border: 1px solid #000; padding: 2px;">SN</th>
+                            <th style="border: 1px solid #000; padding: 2px;">Year</th>
+                            <th style="border: 1px solid #000; padding: 2px;">Criticality (Y/N)</th>
+                            <th style="border: 1px solid #000; padding: 2px;" colspan="4">PM</th>
+                            <th style="border: 1px solid #000; padding: 2px;" colspan="3">Calibration</th>
+                            <th style="border: 1px solid #000; padding: 2px;">PIC</th>
+                            <th style="border: 1px solid #000; padding: 2px;">Dikerjakan tgl:</th>
+                            <th style="border: 1px solid #000; padding: 2px;">Keterangan</th>
+                          </tr>
+                          <tr>
+                            <th style="border: 1px solid #000; padding: 2px;"></th>
+                            <th style="border: 1px solid #000; padding: 2px;"></th>
+                            <th style="border: 1px solid #000; padding: 2px;"></th>
+                            <th style="border: 1px solid #000; padding: 2px;"></th>
+                            <th style="border: 1px solid #000; padding: 2px;"></th>
+                            <th style="border: 1px solid #000; padding: 2px;"></th>
+                            <th style="border: 1px solid #000; padding: 2px;"></th>
+                            <th style="border: 1px solid #000; padding: 2px;">Product</th>
+                            <th style="border: 1px solid #000; padding: 2px;">Process</th>
+                            <th style="border: 1px solid #000; padding: 2px;">Safety</th>
+                            <th style="border: 1px solid #000; padding: 2px;">Enviroment</th>
+                            <th style="border: 1px solid #000; padding: 2px;">Y/N</th>
+                            <th style="border: 1px solid #000; padding: 2px;">6 Monthly</th>
+                            <th style="border: 1px solid #000; padding: 2px;">Yearly</th>
+                            <th style="border: 1px solid #000; padding: 2px;">6/12</th>
+                            <th style="border: 1px solid #000; padding: 2px;">Y/N</th>
+                            <th style="border: 1px solid #000; padding: 2px;">Schedule</th>
+                            <th style="border: 1px solid #000; padding: 2px;"></th>
+                            <th style="border: 1px solid #000; padding: 2px;"></th>
+                            <th style="border: 1px solid #000; padding: 2px;"></th>
+                          </tr>
+                        </thead>
+                      </table>
+                    </div>
+                  </div>
+                </div>
+                <small class="form-text text-muted mt-3">
+                  Preview ini menunjukkan bagaimana header akan tampil saat dicetak
+                </small>
+              </div>
+            </div> -->
+
+             <!-- <div class="card card-warning mt-4">
+              <div class="card-header">
+                <h3 class="card-title"><i class="fas fa-print mr-2"></i>Pengaturan Print</h3>
+                <div class="card-tools">
+                  <button type="button" class="btn btn-tool" data-card-widget="collapse">
+                    <i class="fas fa-minus"></i>
+                  </button>
+                </div>
+              </div>
+              <div class="card-body">
+                <div class="form-group">
+                  <label>Orientasi Kertas</label>
+                  <select v-model="config.print.orientation" class="form-control">
+                    <option value="portrait">Portrait (Tegak)</option>
+                    <option value="landscape">Landscape (Mendatar)</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label>Margin Kertas</label>
+                  <select v-model="config.print.margin" class="form-control">
+                    <option value="5mm">5mm (Sempit)</option>
+                    <option value="10mm" selected>10mm (Normal)</option>
+                    <option value="15mm">15mm (Lebar)</option>
+                    <option value="20mm">20mm (Sangat Lebar)</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label>Tinggi Header</label>
+                  <select v-model="config.print.headerHeight" class="form-control">
+                    <option value="20mm">20mm (Kecil)</option>
+                    <option value="25mm">25mm (Sedang)</option>
+                    <option value="30mm" selected>30mm (Besar)</option>
+                    <option value="35mm">35mm (Sangat Besar)</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <label>Font untuk Print</label>
+                  <select v-model="config.print.fontFamily" class="form-control">
+                    <option value="'Arial', sans-serif">Arial (Default)</option>
+                    <option value="'Times New Roman', serif">Times New Roman</option>
+                    <option value="'Calibri', sans-serif">Calibri</option>
+                    <option value="'Segoe UI', sans-serif">Segoe UI</option>
+                  </select>
+                </div>
+                <div class="form-group">
+                  <div class="form-check">
+                    <input 
+                      v-model="config.print.showLogo" 
+                      class="form-check-input" 
+                      type="checkbox" 
+                      id="showLogo"
+                    >
+                    <label class="form-check-label" for="showLogo">
+                      Tampilkan Logo di Header
+                    </label>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <div class="form-check">
+                    <input 
+                      v-model="config.print.showAddress" 
+                      class="form-check-input" 
+                      type="checkbox" 
+                      id="showAddress"
+                    >
+                    <label class="form-check-label" for="showAddress">
+                      Tampilkan Alamat di Header
+                    </label>
+                  </div>
+                </div>
+                <div class="form-group">
+                  <div class="form-check">
+                    <input 
+                      v-model="config.print.showDocumentRef" 
+                      class="form-check-input" 
+                      type="checkbox" 
+                      id="showDocumentRef"
+                    >
+                    <label class="form-check-label" for="showDocumentRef">
+                      Tampilkan Nomor Referensi Dokumen
+                    </label>
+                  </div>
+                </div>
+              </div>
+            </div> -->
+            
+          
+          </div>
+        </div>
+      </div>
     </section>
   </div>
 </template>
 
 <script setup>
-import { ref, computed, watch, onMounted } from 'vue'
+import { ref, computed, watch } from 'vue'
 import { useFrontendConfig } from '@/composables/useConfig'
-import { useVersioning } from '@/composables/useVersioning'
-import { useDatabaseConfig } from '@/composables/useDatabaseConfig'
-import { useSettingsStore } from '@/stores/settings'
-import { userStore } from '@/stores/userStore'
 
 const {
   config,
@@ -461,72 +522,12 @@ const {
   deleteLogo
 } = useFrontendConfig()
 
-const {
-  versions,
-  versioningLoading,
-  fetchVersions,
-  createVersion
-} = useVersioning()
-
-// Database Config
-const {
-  activeConfig,
-  allConfigs,
-  isLoading: dbConfigLoading,
-  isSwitching,
-  isTesting,
-  spreadsheetInfo,
-  loadActiveConfig,
-  loadAllConfigs,
-  switchDatabase,
-  testConnection
-} = useDatabaseConfig()
-
-const settingsStore = useSettingsStore()
-const isUsingSupabase = computed(() => settingsStore.isUsingSupabase)
-const isUsingSpreadsheet = computed(() => settingsStore.isUsingGoogleSheets)
-const currentDatabaseName = computed(() => settingsStore.isUsingSupabase ? 'Supabase' : 'Google Spreadsheet')
-
-// Check if user is admin
-const currentUser = computed(() => userStore.state.user)
-const isAdmin = computed(() => {
-  const role = currentUser.value?.role
-  return role === 'admin' || role === 'superadmin'
-})
-
-// Database switch form
-const databaseSwitchForm = ref({
-  database_type: 'supabase',
-  spreadsheet_id: '',
-  spreadsheet_url: '',
-  notes: ''
-})
-
 // local draft object used by the form; changes here are not reflected globally
 const draft = ref({ ...config.value })
 const draftLogo = ref(previewLogo.value)
 const draftCompanyLogo = ref(null) // For company logo preview
 const isSavingLocal = ref(false) // Flag untuk mencegah watch trigger saat save
 const isUploading = ref(false)
-
-const syncing = ref(false)
-const newVersionDescription = ref('')
-
-// Handle Sync
-const handleSync = async () => {
-  if (!confirm('Data dari Sheets akan menimpa data di Supabase (untuk ID yang sama). Lanjutkan?')) return
-
-  syncing.value = true
-  try {
-    const { syncService } = await import('@/services/syncService')
-    const result = await syncService.syncSheetsToSupabase()
-    Swal.fire('Berhasil!', `Sinkronisasi selesai. ${result.count} data diperbarui.`, 'success')
-  } catch (err) {
-    Swal.fire('Gagal!', err.message, 'error')
-  } finally {
-    syncing.value = false
-  }
-}
 
 // keep draft in sync when config is externally updated (bukan dari save lokal)
 watch(config, (newVal) => {
@@ -562,7 +563,7 @@ const generateFaviconFromImage = (dataUrl) => {
   img.src = dataUrl
 }
 
-// ✅ AUTO-COMPRESS IMAGE sebelum upload (with transparency support)
+// ✅ AUTO-COMPRESS IMAGE sebelum upload
 const compressImage = (file, maxWidth = 800, maxHeight = 600, quality = 0.8) => {
   return new Promise((resolve, reject) => {
     const reader = new FileReader()
@@ -588,30 +589,13 @@ const compressImage = (file, maxWidth = 800, maxHeight = 600, quality = 0.8) => 
         canvas.width = width
         canvas.height = height
         const ctx = canvas.getContext('2d')
-        
-        // Clear canvas with transparent background for PNG
-        ctx.clearRect(0, 0, width, height)
-        
-        // Draw image
         ctx.drawImage(img, 0, 0, width, height)
         
-        // Detect file type and use appropriate format
-        let mimeType = 'image/jpeg'
-        let compressQuality = quality
-        
-        // Check if original file is PNG or has transparency
-        if (file.type === 'image/png' || file.name.toLowerCase().endsWith('.png')) {
-          mimeType = 'image/png'
-          compressQuality = 1 // PNG doesn't use quality parameter
-        } else if (file.type === 'image/webp') {
-          mimeType = 'image/webp'
-        }
-        
         // Compress dan convert ke dataURL
-        const compressedDataUrl = canvas.toDataURL(mimeType, compressQuality)
+        const compressedDataUrl = canvas.toDataURL('image/jpeg', quality)
         
-        console.log('[Compress] Original:', img.width, 'x', img.height, '|', Math.round(file.size / 1024), 'KB', '|', file.type)
-        console.log('[Compress] Compressed:', width, 'x', height, '|', Math.round(compressedDataUrl.length * 3 / 4 / 1024), 'KB', '|', mimeType)
+        console.log('[Compress] Original:', img.width, 'x', img.height, '|', Math.round(file.size / 1024), 'KB')
+        console.log('[Compress] Compressed:', width, 'x', height, '|', Math.round(compressedDataUrl.length * 3 / 4 / 1024), 'KB')
         
         resolve(compressedDataUrl)
       }
@@ -623,14 +607,14 @@ const compressImage = (file, maxWidth = 800, maxHeight = 600, quality = 0.8) => 
   })
 }
 
-// ✅ HANDLE UPLOAD LOGO - Upload ke Supabase as base64
+// ✅ HANDLE UPLOAD LOGO with confirmation - Upload ke Vercel Blob
 const handleLogoUpload = async (event) => {
   const file = event.target.files[0]
   if (!file) return
 
   if (!file.type.startsWith('image/')) {
-  if (window.Swal) {
-    window.Swal.fire({
+    if (window.Swal) {
+      window.Swal.fire({
         icon: 'error',
         title: 'Gagal Upload!',
         text: 'File harus berupa gambar (PNG, JPG, SVG)',
@@ -641,38 +625,33 @@ const handleLogoUpload = async (event) => {
   }
 
   // Show loading
-            if (window.Swal) {
-              window.Swal.fire({
+  if (window.Swal) {
+    window.Swal.fire({
       title: 'Mengupload...',
-      text: 'Logo sedang dikompres dan disimpan',
+      text: 'Logo sedang dikompres dan diupload ke server',
       allowOutsideClick: false,
       didOpen: () => {
         window.Swal.showLoading()
       }
     })
   }
+
   try {
     // Auto-compress image
     const compressedDataUrl = await compressImage(file, 800, 600, 0.8)
     
-    // Detect mime type from dataURL
-    const mimeMatch = compressedDataUrl.match(/^data:([^;]+);/)
-    const mimeType = mimeMatch ? mimeMatch[1] : 'image/png'
-    
     // Convert dataURL ke File untuk upload
     const response = await fetch(compressedDataUrl)
     const blob = await response.blob()
-    const compressedFile = new File([blob], file.name, { type: mimeType })
+    const compressedFile = new File([blob], file.name, { type: 'image/jpeg' })
 
-    // Upload ke API (akan disimpan sebagai base64 di Supabase)
-    const result = await uploadLogo(compressedFile, 'logo sistem')
+    // Upload ke API
+    const result = await uploadLogo(compressedFile)
 
-    // Update draft untuk preview - logoUrl berisi base64
+    // Update draft untuk preview
     draftLogo.value = result.logoUrl
     draft.value.logoUrl = result.logoUrl
-    draft.value.logoDataUrl = result.logoUrl
     draft.value.faviconUrl = result.faviconUrl
-    draft.value.faviconDataUrl = result.faviconUrl
 
     if (window.Swal) {
       window.Swal.fire({
@@ -684,16 +663,15 @@ const handleLogoUpload = async (event) => {
       })
     }
   } catch (error) {
-    console.error('[Config] Upload error:', error)
     if (window.Swal) {
       window.Swal.fire({
         icon: 'error',
         title: 'Gagal Upload!',
         text: error.message || 'Terjadi kesalahan saat upload logo',
         confirmButtonText: 'OK'
-    })
+      })
+    }
   }
-}
 
   event.target.value = ''
 }
@@ -726,8 +704,8 @@ const removeLogo = async () => {
           let link = document.querySelector("link[rel~='icon']")
           if (link) {
             link.href = '/favicon.ico'
-  }
-
+          }
+          
           if (window.Swal) {
             window.Swal.fire({
               icon: 'success',
@@ -810,26 +788,19 @@ const handleCompanyLogoUpload = async (event) => {
   }
 
   if (window.Swal) {
-    window.Swal.fire({ title: 'Mengupload...', text: 'Logo perusahaan sedang dikompres dan disimpan', allowOutsideClick: false, didOpen: () => { window.Swal.showLoading() } })
+    window.Swal.fire({ title: 'Mengupload...', text: 'Logo perusahaan sedang dikompres dan diupload', allowOutsideClick: false, didOpen: () => { window.Swal.showLoading() } })
   }
 
   try {
     // Auto-compress image
     const compressedDataUrl = await compressImage(file, 800, 600, 0.8)
     
-    // Detect mime type from dataURL
-    const mimeMatch = compressedDataUrl.match(/^data:([^;]+);/)
-    const mimeType = mimeMatch ? mimeMatch[1] : 'image/png'
-    
     // Convert dataURL ke File untuk upload
     const response = await fetch(compressedDataUrl)
     const blob = await response.blob()
-    const compressedFile = new File([blob], file.name, { type: mimeType })
+    const compressedFile = new File([blob], file.name, { type: 'image/jpeg' })
     
-    // Upload ke API (akan disimpan sebagai base64 di Supabase)
     const result = await uploadLogo(compressedFile, 'logo perusahaan')
-    
-    // Update draft untuk preview - logoUrl berisi base64
     draftCompanyLogo.value = result.logoUrl
     draft.value.logoPerusahaanUrl = result.logoUrl
     draft.value.logoPerusahaanDataUrl = result.logoUrl
@@ -838,7 +809,6 @@ const handleCompanyLogoUpload = async (event) => {
       window.Swal.fire({ icon: 'success', title: 'Berhasil!', text: 'Logo perusahaan berhasil diupload dan dikompres otomatis', timer: 1500, showConfirmButton: false })
     }
   } catch (error) {
-    console.error('[Config] Company logo upload error:', error)
     if (window.Swal) {
       window.Swal.fire({ icon: 'error', title: 'Gagal Upload!', text: error.message, confirmButtonText: 'OK' })
     }
@@ -865,19 +835,23 @@ const confirmAndSave = async () => {
   const doSave = async () => {
     isSavingLocal.value = true
 
-    // Copy all draft values to config
+    if (draftLogo.value) {
+      draft.value.logoUrl = draftLogo.value
+    }
+
+    if (draftCompanyLogo.value) {
+      draft.value.logoPerusahaanUrl = draftCompanyLogo.value
+    }
+
     Object.keys(draft.value).forEach(key => {
       config.value[key] = draft.value[key]
     })
 
-    // Update preview logo if changed
     if (draftLogo.value) {
       previewLogo.value = draftLogo.value
     }
 
-    // Save to Supabase
     await saveConfig()
-    
     isSavingLocal.value = false
   }
 
@@ -893,122 +867,14 @@ const confirmAndSave = async () => {
       if (result.isConfirmed) {
         await doSave()
       } else {
-        // Reset draft to current config
         draft.value = { ...config.value }
         draftLogo.value = previewLogo.value
-        draftCompanyLogo.value = config.value.logoPerusahaanUrl || config.value.logoPerusahaanDataUrl
       }
     })
   } else {
     await doSave()
   }
 }
-
-// ✅ CREATE NEW DATA VERSION
-const createNewVersion = async () => {
-  if (!newVersionDescription.value.trim()) return
-
-  if (window.Swal) {
-    window.Swal.fire({
-      title: 'Buat versi data baru?',
-      text: `Snapshot data saat ini akan dibuat dengan deskripsi: "${newVersionDescription.value}"`,
-      icon: 'question',
-      showCancelButton: true,
-      confirmButtonText: 'Ya, buat versi',
-      cancelButtonText: 'Batal'
-    }).then(async (result) => {
-      if (result.isConfirmed) {
-        try {
-          const result = await createVersion(newVersionDescription.value)
-          if (result.success) {
-            newVersionDescription.value = ''
-            await fetchVersions()
-            if (window.Swal) {
-              window.Swal.fire({
-                icon: 'success',
-                title: 'Berhasil!',
-                text: `Versi data baru ${result.data.version_name} telah dibuat`,
-                timer: 2000,
-                showConfirmButton: false
-              })
-            }
-          } else {
-            throw new Error(result.error || 'Gagal membuat versi')
-          }
-        } catch (error) {
-          console.error('Create version error:', error)
-          if (window.Swal) {
-            window.Swal.fire({
-              icon: 'error',
-              title: 'Gagal!',
-              text: error.message || 'Terjadi kesalahan saat membuat versi data',
-              confirmButtonText: 'OK'
-            })
-          }
-        }
-      }
-    })
-  }
-}
-
-// ✅ HANDLE SWITCH DATABASE
-const handleSwitchDatabase = async () => {
-  if (window.Swal) {
-    window.Swal.fire({
-      title: 'Switch Database?',
-      html: `
-        <p>Anda akan mengubah database dari <strong>${currentDatabaseName.value}</strong> ke <strong>${databaseSwitchForm.value.database_type}</strong></p>
-        <p class="text-danger mt-2"><small><i class="fas fa-exclamation-triangle"></i> Pastikan data sudah di-backup sebelum melanjutkan!</small></p>
-      `,
-      icon: 'warning',
-      showCancelButton: true,
-      confirmButtonText: 'Ya, Switch Database',
-      cancelButtonText: 'Batal',
-      confirmButtonColor: '#d33'
-    }).then(async (result) => {
-      if (result.isConfirmed) {
-        try {
-          await switchDatabase({
-            database_type: databaseSwitchForm.value.database_type,
-            spreadsheet_id: databaseSwitchForm.value.spreadsheet_id || 'DEFAULT_CONFIGURED_ID',
-            spreadsheet_url: databaseSwitchForm.value.spreadsheet_url || '',
-            updated_by: currentUser.value?.nama || 'admin',
-            notes: databaseSwitchForm.value.notes || `Switch to ${databaseSwitchForm.value.database_type}`
-          })
-        } catch (error) {
-          console.error('Switch database error:', error)
-        }
-      }
-    })
-  }
-}
-
-// ✅ HANDLE TEST CONNECTION
-const handleTestConnection = async () => {
-  try {
-    await testConnection(databaseSwitchForm.value.spreadsheet_id)
-  } catch (error) {
-    console.error('Test connection error:', error)
-  }
-}
-
-// ✅ LOAD VERSIONS ON MOUNT
-onMounted(async () => {
-  await fetchVersions()
-  
-  // Load database config
-  if (isAdmin.value) {
-    await loadActiveConfig()
-    await loadAllConfigs()
-    
-    // Populate form dengan config yang aktif
-    if (activeConfig.value) {
-      databaseSwitchForm.value.database_type = activeConfig.value.database_type || 'supabase'
-      databaseSwitchForm.value.spreadsheet_id = activeConfig.value.spreadsheet_id || ''
-      databaseSwitchForm.value.spreadsheet_url = activeConfig.value.spreadsheet_url || ''
-    }
-  }
-})
 
 </script>
 

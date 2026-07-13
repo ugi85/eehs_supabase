@@ -49,8 +49,8 @@ const previewLogo = ref(null)
 const isLoading = ref(false)
 let refreshInterval = null
 
-// ✅ Mapping key dari Supabase (deskripsi) ke format config frontend
-const SUPABASE_TO_FRONTEND_MAPPING = {
+// ✅ Mapping key dari Google Sheet ke format config frontend
+const SHEET_TO_FRONTEND_MAPPING = {
   'nama sistem': 'systemName',
   'versi sistem': 'systemVersion',
   'nama perusahaan': 'companyName',
@@ -61,155 +61,77 @@ const SUPABASE_TO_FRONTEND_MAPPING = {
   'favicon': 'faviconUrl'
 }
 
-// ✅ Mapping dari frontend ke Supabase
-const FRONTEND_TO_SUPABASE_MAPPING = {}
-Object.keys(SUPABASE_TO_FRONTEND_MAPPING).forEach(supabaseKey => {
-  FRONTEND_TO_SUPABASE_MAPPING[SUPABASE_TO_FRONTEND_MAPPING[supabaseKey]] = supabaseKey
+// ✅ Mapping dari frontend ke Google Sheet
+const FRONTEND_TO_SHEET_MAPPING = {}
+Object.keys(SHEET_TO_FRONTEND_MAPPING).forEach(sheetKey => {
+  FRONTEND_TO_SHEET_MAPPING[SHEET_TO_FRONTEND_MAPPING[sheetKey]] = sheetKey
 })
 
-// ✅ Transform data dari Supabase ke format frontend
-function transformSupabaseToFrontend(supabaseData) {
+// ✅ Transform data dari sheet ke format frontend
+function transformSheetToFrontend(sheetData) {
   const frontendData = {}
   
-  Object.keys(SUPABASE_TO_FRONTEND_MAPPING).forEach(supabaseKey => {
-    const frontendKey = SUPABASE_TO_FRONTEND_MAPPING[supabaseKey]
-    if (supabaseData[supabaseKey] !== undefined) {
-      frontendData[frontendKey] = supabaseData[supabaseKey]
+  Object.keys(SHEET_TO_FRONTEND_MAPPING).forEach(sheetKey => {
+    const frontendKey = SHEET_TO_FRONTEND_MAPPING[sheetKey]
+    if (sheetData[sheetKey] !== undefined) {
+      frontendData[frontendKey] = sheetData[sheetKey]
     }
   })
   
   return frontendData
 }
 
-// ✅ Transform data dari frontend ke format Supabase
-function transformFrontendToSupabase(frontendData) {
-  const supabaseData = {}
+// ✅ Transform data dari frontend ke format sheet
+function transformFrontendToSheet(frontendData) {
+  const sheetData = {}
   
-  Object.keys(FRONTEND_TO_SUPABASE_MAPPING).forEach(frontendKey => {
-    const supabaseKey = FRONTEND_TO_SUPABASE_MAPPING[frontendKey]
+  Object.keys(FRONTEND_TO_SHEET_MAPPING).forEach(frontendKey => {
+    const sheetKey = FRONTEND_TO_SHEET_MAPPING[frontendKey]
     if (frontendData[frontendKey] !== undefined) {
-      supabaseData[supabaseKey] = frontendData[frontendKey]
+      sheetData[sheetKey] = frontendData[frontendKey]
     }
   })
   
-  return supabaseData
+  return sheetData
 }
 
-// ✅ Load config dari Supabase
+// ✅ Load config dari Google Sheets
 const loadConfig = async (silent = false) => {
-
-
-  const settings = useSettingsStore()
-  if (settings.isUsingGoogleSheets) {
-    console.log('[useConfig] Mode Google Sheets aktif, memuat dari fallback lokal...')
-    return loadFromLocalStorage(silent)
-  }
-  
-
     if (!silent) {
-
     isLoading.value = true
     }
     
     try {
-        if (!silent) {
-      console.log('[useConfig] Loading config from Supabase...')
-        }
-
+    if (!silent) console.log('[useConfig] Loading config from Google Sheets...')
     // Load dari API
-    const supabaseData = await configApi.getConfig()
-
-    if (!silent) {
-      console.log('[useConfig] Raw data from Supabase:', supabaseData)
-      console.log('[useConfig] logo sistem dari Supabase:', supabaseData['logo sistem'])
-      console.log('[useConfig] favicon dari Supabase:', supabaseData['favicon'])
-    }
+    const sheetData = await configApi.getConfig()
 
     // Transform ke format frontend
-    const frontendConfig = transformSupabaseToFrontend(supabaseData)
+    const frontendConfig = transformSheetToFrontend(sheetData)
 
-    if (!silent) {
-      console.log('[useConfig] Transformed config:', frontendConfig)
-      console.log('[useConfig] logoUrl setelah transform:', frontendConfig.logoUrl)
-    }
-    
     // Cek apakah ada perubahan
     const hasChanges = JSON.stringify(config.value) !== JSON.stringify({ ...DEFAULT_CONFIG, ...frontendConfig })
     
     config.value = { ...DEFAULT_CONFIG, ...frontendConfig }
     
-    if (!silent) {
-      console.log('[useConfig] Final config:', config.value)
-      console.log('[useConfig] Final logoUrl:', config.value.logoUrl ? 'ADA' : 'KOSONG')
-      console.log('[useConfig] Has changes:', hasChanges)
-    }
-
     // Set preview logo
     const logoValue = config.value.logoUrl || config.value.logoDataUrl
     if (logoValue) {
       previewLogo.value = logoValue
-      if (!silent) {
-        console.log('[useConfig] Logo loaded, length:', logoValue.length)
-        console.log('[useConfig] Logo preview:', logoValue.substring(0, 50) + '...')
-      }
       updateFavicon(logoValue)
-    } else {
-      if (!silent) {
-        console.log('[useConfig] No logo found in config!')
       }
-    }
-    
     // Update title
-    if (config.value.systemName) {
-      updateTitle(config.value.systemName)
-    }
-
+    if (config.value.systemName) updateTitle(config.value.systemName)
     // Backup to localStorage
     localStorage.setItem(CONFIG_KEY, JSON.stringify(config.value))
-    if (!silent) {
-      console.log('[useConfig] Config backed up to localStorage')
-    }
-    
     return hasChanges
   } catch (error) {
-    console.error('[useConfig] Error loading config from Supabase:', error)
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
+    console.error('[useConfig] Error loading config from Sheets:', error)
     return loadFromLocalStorage(silent)
   } finally {
-    if (!silent) {
-      isLoading.value = false
-
-
+    if (!silent) isLoading.value = false
   }
-}
-}
-
+  }
 // Helper untuk load dari local storage
 const loadFromLocalStorage = (silent) => {
   try {
@@ -233,18 +155,11 @@ const startAutoRefresh = () => {
     return
   }
   
-  // Set interval lebih panjang (misal 5 menit) agar tidak spamming dan flicker
+  // Set interval lebih panjang (misal 30 menit) agar tidak spamming dan flicker
   refreshInterval = setInterval(async () => {
-
-
-
-    const settings = useSettingsStore()
-    if (settings.isUsingSupabase) {
       await loadConfig(true)
+  }, AUTO_REFRESH_INTERVAL)
     }
-  }, 300000) // 300 detik = 5 menit
-}
-
 // ✅ Stop auto-refresh
 const stopAutoRefresh = () => {
   if (refreshInterval) {
@@ -260,38 +175,16 @@ const refreshConfig = async () => {
   return await loadConfig(false)
 }
 
-// ✅ Save config ke Supabase
+// ✅ Save config ke Google Sheets
 const saveConfig = async () => {
-  const settings = useSettingsStore()
-  if (settings.isUsingGoogleSheets) {
-    localStorage.setItem(CONFIG_KEY, JSON.stringify(config.value))
-    return true
-  }
-
   isSaving.value = true
   try {
     config.value.lastUpdated = new Date().toISOString()
 
-    // Update previewLogo
-    if (config.value.logoUrl || config.value.logoDataUrl) {
-      previewLogo.value = config.value.logoUrl || config.value.logoDataUrl
-    }
-
-    // Transform config ke format Supabase
-    const supabaseData = transformFrontendToSupabase(config.value)
-
+    // Transform config ke format sheet
+    const sheetData = transformFrontendToSheet(config.value)
     // Save via API
-    const result = await configApi.setConfig(supabaseData)
-
-    // Update favicon
-    if (config.value.faviconUrl || config.value.faviconDataUrl) {
-      updateFavicon(config.value.faviconUrl || config.value.faviconDataUrl)
-    }
-    
-    // Update title
-    if (config.value.systemName) {
-      updateTitle(config.value.systemName)
-    }
+    const result = await configApi.setConfig(sheetData)
 
     // Backup to localStorage
     localStorage.setItem(CONFIG_KEY, JSON.stringify(config.value))
@@ -300,7 +193,7 @@ const saveConfig = async () => {
       window.Swal.fire({
         icon: 'success',
         title: 'Berhasil!',
-        text: result.message || 'Konfigurasi sistem berhasil disimpan',
+        text: 'Konfigurasi berhasil disimpan ke Google Sheets',
         timer: 1500,
         showConfirmButton: false
       })
@@ -312,7 +205,7 @@ const saveConfig = async () => {
       window.Swal.fire({
         icon: 'error',
         title: 'Gagal Simpan!',
-        text: e.message || 'Terjadi kesalahan saat menyimpan konfigurasi',
+        text: e.message || 'Terjadi kesalahan pada Google Sheets',
         confirmButtonText: 'OK'
       })
     }
@@ -322,44 +215,23 @@ const saveConfig = async () => {
   }
 }
 
-// ✅ Upload logo ke Supabase (as base64)
+// ✅ Upload logo ke Google Sheets
 const uploadLogo = async (file, deskripsi = 'logo sistem') => {
   try {
-    console.log('[useConfig] Uploading logo:', file.name, 'as', deskripsi)
-    
     const result = await configApi.uploadLogo(file, deskripsi)
-    const fileUrl = result.data.fileUrl // base64 string
+    const fileUrl = result.data.fileUrl
 
-    console.log('[useConfig] Logo uploaded successfully')
-    console.log('[useConfig] Base64 length:', fileUrl.length)
-
-    // Update config HANYA field yang sesuai dengan deskripsi
     if (deskripsi === 'logo sistem') {
       config.value.logoUrl = fileUrl
-      config.value.logoDataUrl = fileUrl
       previewLogo.value = fileUrl
-      
-      // Generate favicon hanya untuk logo sistem
       generateFaviconFromImage(fileUrl)
-      config.value.faviconUrl = fileUrl
-      config.value.faviconDataUrl = fileUrl
-      
-      console.log('[useConfig] Logo sistem & favicon updated')
     } else if (deskripsi === 'logo perusahaan') {
       config.value.logoPerusahaanUrl = fileUrl
-      config.value.logoPerusahaanDataUrl = fileUrl
-      console.log('[useConfig] Logo perusahaan updated')
     }
 
-    // Save to Supabase immediately
     await saveConfig()
-
-    return {
-      logoUrl: fileUrl,
-      faviconUrl: config.value.faviconUrl || fileUrl
-    }
+    return { logoUrl: fileUrl }
   } catch (error) {
-    console.error('[useConfig] Error uploading logo:', error)
     throw error
   }
 }
@@ -367,30 +239,18 @@ const uploadLogo = async (file, deskripsi = 'logo sistem') => {
 // ✅ Delete logo
 const deleteLogo = async (deskripsi = 'logo sistem') => {
   try {
-    console.log('[useConfig] Deleting logo:', deskripsi)
-    
-    // Update config values
     if (deskripsi === 'logo sistem') {
       config.value.logoUrl = null
-      config.value.faviconUrl = null
-      config.value.logoDataUrl = null
-      config.value.faviconDataUrl = null
       previewLogo.value = null
       updateFavicon('/favicon.ico')
     } else if (deskripsi === 'logo perusahaan') {
       config.value.logoPerusahaanUrl = null
-      config.value.logoPerusahaanDataUrl = null
     }
 
-    // Delete from Supabase
     await configApi.deleteLogo(deskripsi)
-    
-    // Save config
     await saveConfig()
-
     return true
   } catch (error) {
-    console.error('[useConfig] Error deleting logo:', error)
     throw error
   }
 }
@@ -474,7 +334,9 @@ const resetConfig = async () => {
 }
 
 const getLogoUrl = computed(() => {
-  return config.value.logoUrl || config.value.logoDataUrl || '/logo/agis-logo.png'
+  const url = config.value.logoUrl || config.value.logoDataUrl || '/logo/agis-logo.png'
+  // Tambahkan timestamp agar browser melakukan reload gambar jika terjadi perubahan
+  return url + (url.startsWith('http') ? `?t=${Date.now()}` : '')
 })
 
 const getFullAddress = computed(() => {
@@ -489,8 +351,14 @@ const getFullAddress = computed(() => {
 
 // Initialize on module load
 if (typeof window !== 'undefined') {
+  // Tunggu sedikit agar Pinia ter-initialize atau pastikan dipanggil setelah app.use(pinia)
+  // Cara aman adalah memanggilnya setelah aplikasi ter-mount atau di nextTick
+  import('vue').then(({ nextTick }) => {
+    nextTick(() => {
   loadConfig()
   startAutoRefresh() // Start auto-refresh
+    })
+  })
 }
 
 export function useFrontendConfig() {

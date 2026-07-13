@@ -20,12 +20,14 @@ export function useJadwalKalibrasi() {
   // === Init DataTables ===
   const initDataTable = async () => {
     await nextTick()
+    const table = document.querySelector('.jadwal-kalibrasi-table')
+
+    // Hancurkan instance lama dengan cara yang benar
     if (dataTableInstance) {
-      dataTableInstance.clear()
-      dataTableInstance.destroy(true)
+      dataTableInstance.destroy()
       dataTableInstance = null
     }
-    const table = document.querySelector('.jadwal-kalibrasi-table')
+
     if (table) {
       dataTableInstance = $(table).DataTable({
         paging: true,
@@ -37,13 +39,11 @@ export function useJadwalKalibrasi() {
         responsive: false,
         scrollX: true,
         scrollCollapse: true,
-        lengthMenu: [[10, 25, 50, 100, -1], [10, 25, 50, 100, 'All']],
+        lengthMenu: [[10, 25, 50, -1], [10, 25, 50, 'All']], // 🔥 Diperbaiki: tidak otomatis all, default 10
         language: { search: '_INPUT_', searchPlaceholder: 'Cari data...' },
-        // Default sorting: kolom pertama (No) ascending, sesuai urutan dari API
-        order: [[0, 'asc']],
-        // Kolom checkbox (index 0) tidak bisa di-sort
+        order: [[1, 'asc']], // Sesuaikan dengan kolom "No"
         columnDefs: [
-          { orderable: false, targets: [0] } // Checkbox column
+          { orderable: false, targets: [0, 11] } // 🔥 Diperbaiki: index kolom aksi sekarang jadi 11 (karena status/notes dihapus)
         ]
       })
     }
@@ -62,6 +62,7 @@ export function useJadwalKalibrasi() {
         if (now - timestamp < CACHE_DURATION) {
           refJadwal.value = data
           loading.value = false
+          // 🔥 Jangan panggil initDataTable() di sini saat load dari cache
           return
         }
       } catch (e) { /* cache corrupt */ }
@@ -69,11 +70,15 @@ export function useJadwalKalibrasi() {
 
     try {
       const result = await jadwalKalibrasiApi.fetchList()
-      refJadwal.value = result.success ? result.data : []
-      localStorage.setItem(CACHE_KEY, JSON.stringify({ data: refJadwal.value, timestamp: now }))
+      const newData = Array.isArray(result) ? result : (result.data || [])
+
+        refJadwal.value = newData
+      localStorage.setItem(CACHE_KEY, JSON.stringify({ data: newData, timestamp: now }))
+
+      // Selalu re-init setelah data baru di-fetch agar sinkron dengan DOM Vue
+      if (!silent) await initDataTable() // 🔥 Hanya re-init jika bukan silent (auto-refresh)
     } catch (error) {
       console.error('Gagal mengambil data jadwal:', error)
-      refJadwal.value = []
     } finally {
       loading.value = false
     }
@@ -84,17 +89,9 @@ export function useJadwalKalibrasi() {
     isSaving.value = true
     try {
       const isUpdate = !!jadwal.no
-      let result
-      if (jadwal.no) {
-        result = await jadwalKalibrasiApi.update(jadwal.no, jadwal)
-      } else {
-        result = await jadwalKalibrasiApi.create(jadwal)
-      }
+      // Gunakan fungsi saveJadwal dari jadwalKalibrasiApi
+      const result = await jadwalKalibrasiApi.saveJadwal(jadwal)
       if (!result.success) throw new Error(result.message || 'Gagal menyimpan jadwal')
-
-      // ✅ Trigger versioning on data change
-      const action = isUpdate ? 'update' : 'insert'
-      await onKalibrasiChange(action, jadwal)
 
       localStorage.removeItem(CACHE_KEY)
       await fetchList(true)
@@ -102,11 +99,7 @@ export function useJadwalKalibrasi() {
       Swal.fire('Berhasil!', `Jadwal berhasil ${isUpdate ? 'diupdate' : 'ditambahkan'}`, 'success')
       return result
     } catch (error) {
-      if (error.isDuplicate) {
-        Swal.fire({ icon: 'warning', title: 'ID Sudah Ada!', text: error.message })
-      } else {
         Swal.fire('Error!', error.message || 'Gagal menyimpan data jadwal', 'error')
-      }
       throw error
     } finally {
       isSaving.value = false
@@ -129,14 +122,9 @@ export function useJadwalKalibrasi() {
 
     isDeleting.value = true
     try {
-      // Get jadwal data before deletion for versioning trigger
-      const jadwalToDelete = refJadwal.value.find(j => String(j.no) === String(no)) || { no_id: no, description }
-
-      const result = await jadwalKalibrasiApi.delete(no)
+      // Gunakan fungsi deleteJadwal dari jadwalKalibrasiApi
+      const result = await jadwalKalibrasiApi.deleteJadwal(no)
       if (!result || !result.success) throw new Error(result?.message || 'Respons tidak valid')
-
-      // ✅ Trigger versioning on data change
-      await onKalibrasiChange('delete', jadwalToDelete)
 
       refJadwal.value = refJadwal.value.filter(j => String(j.no) !== String(no))
       localStorage.removeItem(CACHE_KEY)
@@ -148,7 +136,7 @@ export function useJadwalKalibrasi() {
       Swal.fire('Gagal Menghapus!', error.message || 'Terjadi kesalahan', 'error')
     } finally {
       isDeleting.value = false
-    }
+  }
   }
 
   // === BULK DELETE (silent, no per-item popup) ===

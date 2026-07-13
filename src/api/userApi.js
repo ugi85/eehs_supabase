@@ -1,4 +1,5 @@
 // src/api/userApi.js
+import api from '@/plugins/axios'
 import { useSettingsStore } from '@/stores/settings'
 
 /**
@@ -10,27 +11,23 @@ export const userApi = {
   /**
    * GET: Read all users
    */
-  async readUsers() {
+  async readUsers() { // Pastikan method ini ada dan sesuai
     const settings = useSettingsStore()
     const url = settings.api.users
-
     try {
       const response = await fetch(`${url}?action=read`, {
         method: 'GET',
         redirect: 'follow'
       })
-
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`)
       }
-
       const result = await response.json()
-
       if (!result.success) {
         throw new Error(result.message || 'Gagal mengambil data user')
       }
-
-      return result
+      // SESUAIKAN: API Anda mengembalikan 'users', bukan 'data'
+      return result.users || []
     } catch (error) {
       console.error('[User API] Error readUsers:', error)
       throw error
@@ -54,13 +51,10 @@ export const userApi = {
       if (!response.ok) {
         throw new Error(`HTTP error! status: ${response.status}`)
       }
-
       const result = await response.json()
-
       if (!result.success) {
         throw new Error(result.message || 'Gagal mengambil data user')
       }
-
       return result
     } catch (error) {
       console.error('[User API] Error getUserById:', error)
@@ -72,10 +66,16 @@ export const userApi = {
    * POST: Create new user
    * @param {Object} user - User data { nama, inisial, email, password, role }
    */
+  async saveUser(user) {
+    return this.createUser(user)
+  },
+
+  /**
+   * POST: Create new user
+   */
   async createUser(user) {
     const settings = useSettingsStore()
     const url = settings.api.users
-
     try {
       const payload = {
         action: 'create',
@@ -85,9 +85,7 @@ export const userApi = {
         password: user.password,
         role: user.role
       }
-
       console.log('[User API] Creating user:', payload)
-
       const response = await fetch(url, {
         method: 'POST',
         headers: {
@@ -96,9 +94,7 @@ export const userApi = {
         mode: 'no-cors',
         body: JSON.stringify(payload)
       })
-
       console.log('[User API] Create response status:', response.status)
-
       // With no-cors, we can't read the response, so we assume success
       return {
         success: true,
@@ -118,7 +114,6 @@ export const userApi = {
   async updateUser(user) {
     const settings = useSettingsStore()
     const url = settings.api.users
-
     try {
       const payload = {
         action: 'update',
@@ -128,14 +123,11 @@ export const userApi = {
         email: user.email,
         role: user.role
       }
-
       // Only include password if provided (for optional update)
       if (user.password) {
         payload.password = user.password
       }
-
       console.log('[User API] Updating user:', payload)
-
       const response = await fetch(url, {
         method: 'POST',
         headers: {
@@ -144,9 +136,7 @@ export const userApi = {
         mode: 'no-cors',
         body: JSON.stringify(payload)
       })
-
       console.log('[User API] Update response status:', response.status)
-
       // With no-cors, we can't read the response, so we assume success
       return {
         success: true,
@@ -166,15 +156,12 @@ export const userApi = {
   async deleteUser(id) {
     const settings = useSettingsStore()
     const url = settings.api.users
-
     try {
       const payload = {
         action: 'delete',
         id: id
       }
-
       console.log('[User API] Deleting user:', id)
-
       const response = await fetch(url, {
         method: 'POST',
         headers: {
@@ -183,9 +170,7 @@ export const userApi = {
         mode: 'no-cors',
         body: JSON.stringify(payload)
       })
-
       console.log('[User API] Delete response status:', response.status)
-
       // With no-cors, we can't read the response, so we assume success
       return {
         success: true,
@@ -302,3 +287,4 @@ export const userApi = {
     }
   }
 }
+

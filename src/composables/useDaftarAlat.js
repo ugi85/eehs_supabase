@@ -1,8 +1,6 @@
 // src/composables/useDaftarAlat.js
 import { ref, nextTick, onUnmounted } from 'vue'
 import { daftarAlatApi } from '@/api'
-import { useDataChangeTrigger } from './useDataChangeTrigger'
-
 const CACHE_KEY = 'daftar_alat_cache'
 const CACHE_DURATION = 60 * 1000 // 1 menit
 
@@ -14,8 +12,6 @@ export function useDaftarAlat() {
   const statusFilter = ref('active') // 'active' | 'obsolete' | 'all'
   let dataTableInstance = null
   let refreshTimer = null
-
-  const { onDaftarAlatChange } = useDataChangeTrigger()
 
   // === Init DataTables ===
   const initDataTable = async () => {
@@ -112,10 +108,6 @@ export function useDaftarAlat() {
       const isUpdate = !!tool.no
       const result = await daftarAlatApi.saveTool(tool)
 
-      // ✅ Trigger versioning on data change
-      const action = isUpdate ? 'update' : 'insert'
-      await onDaftarAlatChange(action, tool)
-
       localStorage.removeItem(`${CACHE_KEY}_active`)
       localStorage.removeItem(`${CACHE_KEY}_obsolete`)
       localStorage.removeItem(`${CACHE_KEY}_all`)
@@ -152,14 +144,8 @@ export function useDaftarAlat() {
 
     isDeleting.value = true
     try {
-      // Get tool data before deletion for versioning trigger
-      const toolToDelete = tools.value.find(t => String(t.no) === String(no)) || { no_id: no, description }
-
       const result = await daftarAlatApi.deleteTool(no)
       if (!result || !result.success) throw new Error(result?.message || 'Respons tidak valid')
-
-      // ✅ Trigger versioning on data change
-      await onDaftarAlatChange('delete', toolToDelete)
 
       tools.value = tools.value.filter(t => String(t.no) !== String(no))
       localStorage.removeItem(`${CACHE_KEY}_active`)

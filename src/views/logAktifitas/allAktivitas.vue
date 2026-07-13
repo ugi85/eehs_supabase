@@ -182,12 +182,14 @@ const saveBacklog = async () => {
   savingBacklog.value = true
   try {
     const updatedBy = permission.user.value?.inisial || permission.user.value?.nama || permission.user.value?.email || null
-    const result = await logAktivitasApi.updateBacklog(
-      backlogModal.value.row.no,
-      backlogModal.value.status,
-      backlogModal.value.notes,
-      updatedBy
-    )
+
+    // Sesuaikan parameter dengan yang diharapkan oleh API (parameter tunggal payload)
+    const result = await logAktivitasApi.updateBacklog({
+      no: backlogModal.value.row.no,
+      status: backlogModal.value.status,
+      notes: backlogModal.value.notes,
+      updated_by: updatedBy
+    })
     backlogModal.value.row.backlog_status = backlogModal.value.status
     backlogModal.value.row.backlog_notes = backlogModal.value.notes
     backlogModal.value.row.backlog_updated_at = new Date().toISOString()

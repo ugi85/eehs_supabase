@@ -1,23 +1,11 @@
 // src/config/supabase.js
-import { createClient } from '@supabase/supabase-js'
-
-const supabaseUrl = import.meta.env.VITE_SUPABASE_URL
-const supabaseAnonKey = import.meta.env.VITE_SUPABASE_ANON_KEY
-
-if (!supabaseUrl || !supabaseAnonKey) {
-  throw new Error('Missing Supabase environment variables. Check your .env file.')
-}
-
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    persistSession: true,
-    autoRefreshToken: true,
-  }
-})
-
+// Supabase connection removed.
+// The system now exclusively uses Google Sheets API.
+export const supabase = null;
 export const handleSupabaseError = (error) => {
   console.error('[Supabase Error]', error)
   const err = new Error(error.message || 'Terjadi kesalahan pada database')
   err.originalError = error
   throw err
 }
+

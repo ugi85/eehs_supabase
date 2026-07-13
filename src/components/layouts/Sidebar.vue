@@ -11,8 +11,6 @@ const route = useRoute()
 const renderKey = ref(0)
 const systemName = computed(() => config.value.systemName || 'EEHS Dashboard')
 const logoUrl = computed(() => getLogoUrl.value || '/favicon.ico')
-const logoKey = ref(0)
-
 const isLoggedIn = computed(() => permission.isLoggedIn.value)
 const canViewUsers = computed(() => permission.can('user:view'))
 const canViewDaftarAlat = computed(() => permission.can('daftarAlat:view'))
@@ -46,11 +44,6 @@ watch(
   { immediate: true }
 )
 
-watch(
-  () => config.value.logoUrl || config.value.logoDataUrl,
-  () => { logoKey.value++ }
-)
-
 const handlePermissionChange = () => { renderKey.value++ }
 
 // Tutup sidebar di mobile saat menu dipilih
@@ -74,12 +67,10 @@ onUnmounted(() => {
   <aside class="main-sidebar sidebar-dark-primary elevation-4">
     <RouterLink to="/dashChart" class="brand-link">
       <img
-        :key="logoKey"
         :src="logoUrl"
         :alt="systemName + ' Logo'"
         class="brand-image img-circle elevation-3"
         style="opacity: .8"
-        @error="logoKey++"
       >
       <span class="brand-text font-weight-light">{{ systemName }}</span>
     </RouterLink>
@@ -191,3 +182,4 @@ onUnmounted(() => {
     </div>
   </aside>
 </template>
+

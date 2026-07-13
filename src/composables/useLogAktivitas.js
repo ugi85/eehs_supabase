@@ -162,7 +162,18 @@ export function useLogAktivitas() {
       } else {
         response = await logAktivitasApi.getAllForPeriod(selectedMonth.value, selectedYear.value)
       }
-      logs.value = response.data || []
+
+      // ✅ FIX: Mapping data backlog yang lebih kuat untuk memastikan sinkronisasi
+      const rawLogs = response.data || []
+      logs.value = rawLogs.map(log => ({
+        ...log,
+        backlog_status: log.backlog_status || null,
+        backlog_notes: log.backlog_notes || '',
+        backlog_updated_at: log.backlog_updated_at || null,
+        backlog_updated_by: log.backlog_updated_by || null,
+        backlog_history: log.backlog_history || []
+      }))
+
       return logs.value
     } catch (error) {
       throw error
@@ -182,7 +193,13 @@ export function useLogAktivitas() {
         description: log.description || log.type_model || '-',
         type_model: log.type_model || '-',
         sn: log.sn || '-',
-        formattedDate: formatDateForDisplay(log.tanggal)
+        formattedDate: formatDateForDisplay(log.tanggal),
+        // ✅ Pastikan field backlog tersedia
+        backlog_status: log.backlog_status || null,
+        backlog_notes: log.backlog_notes || '',
+        backlog_updated_at: log.backlog_updated_at || null,
+        backlog_updated_by: log.backlog_updated_by || null,
+        backlog_history: log.backlog_history || []
       }))
       return logs.value
     } catch (error) {
@@ -200,8 +217,8 @@ export function useLogAktivitas() {
     try {
       localStorage.removeItem(DASHBOARD_CACHE_KEY)
       // Optional: dispatch event jika ada komponen lain yang listen
-      window.dispatchEvent(new CustomEvent('dashboard:needs-refresh', { 
-        detail: { year: selectedYear.value } 
+      window.dispatchEvent(new CustomEvent('dashboard:needs-refresh', {
+        detail: { year: selectedYear.value }
       }))
       console.log('🔄 Dashboard cache cleared')
     } catch (e) {
@@ -211,55 +228,56 @@ export function useLogAktivitas() {
 
   async function createLog(logData) {
     isSaving.value = true
-    loading.value = true
     try {
       const response = await logAktivitasApi.createLog({ ...logData, petugas: logData.petugas || 'Unknown' })
-      
-      // ✅ PERBAIKAN: Gunakan fetchData() agar sesuai filter aktif (bukan fetchAllLogs)
-      await fetchData()
-      
+
+      // ✅ FIX: Update lokal untuk prevent blinking
+      logs.value.push(response.item || { ...logData, no: response.no })
       // ✅ SYNC: Clear dashboard cache agar angka update realtime
       syncDashboard()
-      
+
       closeFormDialog()
       return response
     } catch (error) {
       throw error
     } finally {
       isSaving.value = false
-      loading.value = false
     }
   }
 
   async function updateLog(logData) {
     isSaving.value = true
-    loading.value = true
     try {
       const response = await logAktivitasApi.updateLog(logData)
-      
-      // ✅ PERBAIKAN: Fetch sesuai filter aktif + sync dashboard
-      await fetchData()
+
+      // ✅ FIX: Update lokal untuk mencegah "kosong sejenak"
+      const index = logs.value.findIndex(l => String(l.no) === String(logData.no))
+      if (index !== -1) {
+        logs.value[index] = { ...logs.value[index], ...logData }
+      }
+
+      // Sync dashboard tanpa memicu ulang loading screen
       syncDashboard()
-      
+      // Optional: fetch background tanpa loading untuk sinkronisasi akhir
+      fetchData().catch(console.error)
+
       closeFormDialog()
       return response
     } catch (error) {
       throw error
     } finally {
       isSaving.value = false
-      loading.value = false
     }
   }
 
   async function deleteLog(no) {
     loading.value = true
     try {
-      await logAktivitasApi.delete(no)
-      
-      // ✅ PERBAIKAN: Fetch sesuai filter aktif + sync dashboard
-      await fetchData()
+      await logAktivitasApi.deleteLog(no)
+
+      // ✅ FIX: Hapus lokal untuk respons cepat
+      logs.value = logs.value.filter(l => String(l.no) !== String(no))
       syncDashboard()
-      
       return true
     } catch (error) {
       return false
@@ -272,11 +290,11 @@ export function useLogAktivitas() {
     loading.value = true
     try {
       const result = await logAktivitasApi.bulkDelete(ids)
-      
+
       // ✅ PERBAIKAN: Fetch sesuai filter aktif + sync dashboard
       await fetchData()
       syncDashboard()
-      
+
       return result
     } catch (error) {
       throw error
@@ -292,7 +310,6 @@ export function useLogAktivitas() {
   async function getDaftarAlat() {
     return await logAktivitasApi.getDaftarAlat()
   }
-
   // ── Form dialog ───────────────────────────────────────────────────────────
 
   function openFormDialog(mode = 'create', log = null) {

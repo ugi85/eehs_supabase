@@ -128,8 +128,13 @@ const handleBulkDelete = async () => {
 const isSuperAdmin = computed(() => {
   if (!isLoggedIn.value) return false
   const user = userStore.state.user
-  console.log('[Users] isSuperAdmin - User:', user, 'Role:', user?.role)
-  // Check role = 'superadmin' OR email starts with 'super@'
+  console.log('[Users] Current User in list.vue:', user)
+
+  // Perbaikan: Pastikan role dibandingkan dengan benar
+  // Tambahkan log untuk melihat isi role
+  if (user) {
+    console.log('[Users] Role:', user.role, 'Type:', typeof user.role)
+  }
   return user && (
     (user.role && user.role.toLowerCase() === 'superadmin') ||
     (user.email && user.email.toLowerCase().startsWith('super@'))
@@ -140,9 +145,10 @@ const isSuperAdmin = computed(() => {
 const filteredUsers = computed(() => {
   if (!Array.isArray(users.value)) return []
   
+  console.log('[Users] isSuperAdmin check result:', isSuperAdmin.value)
+
   // Jika superadmin, tampilkan semua
   if (isSuperAdmin.value) {
-    console.log('[Users] filteredUsers - Superadmin viewing, showing all', users.value.length, 'users')
     return users.value
   }
   
@@ -699,3 +705,4 @@ onMounted(() => {
   }
 }
 </style>
+

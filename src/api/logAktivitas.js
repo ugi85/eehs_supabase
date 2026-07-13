@@ -2,8 +2,6 @@
 // ✅ ROUTER WRAPPER - Routes between Supabase and Google Sheets
 import api from '@/plugins/axios'
 import { useSettingsStore } from '@/stores/settings'
-import { logAktivitasApi as supabaseLogAktivitasApi } from '@/api/supabase/logAktivitasApi'
-
 // ✅ SET TIMEOUT GLOBAL 30 DETIK
 api.defaults.timeout = 30000
 
@@ -17,32 +15,15 @@ function toFormData(data) {
   return params
 }
 
-// ✅ GET API ENDPOINT - dengan fallback ke Google Apps Script
+// ✅ GET API ENDPOINT
 function getLogAktivitasEndpoint() {
   const settings = useSettingsStore()
-  
-  // ✅ DEBUG: Log current database type
-  console.log('[logAktivitas] Current database type:', settings.database.type)
-  
-  if (settings.isUsingSupabase) {
-    return null  // Will use Supabase API
-  }
-  
-  // Use Google Apps Script endpoint
-  const endpoint = settings.api.logAktivitas || settings.googleAppsScript.logAktivitas
-  console.log('[logAktivitas] Using endpoint:', endpoint)
-  return endpoint
+  return settings.api.logAktivitas
 }
-
+  
 export const logAktivitasApi = {
   // ✅ DASHBOARD CHARTS - getTotalDaftarAlat
   async getTotalDaftarAlat() {
-    const settings = useSettingsStore()
-    
-    if (settings.isUsingSupabase) {
-      return await supabaseLogAktivitasApi.getTotalDaftarAlat()
-    }
-    
     try {
       const endpoint = getLogAktivitasEndpoint()
       const { data } = await api.get(endpoint, {
@@ -62,12 +43,6 @@ export const logAktivitasApi = {
 
   // ✅ DASHBOARD CHARTS - getKalibrasiScheduleByMonth
   async getKalibrasiScheduleByMonth(year) {
-    const settings = useSettingsStore()
-    
-    if (settings.isUsingSupabase) {
-      return await supabaseLogAktivitasApi.getKalibrasiScheduleByMonth(year)
-    }
-    
     const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
     
     try {
@@ -98,12 +73,6 @@ export const logAktivitasApi = {
 
   // ✅ DASHBOARD CHARTS - getPMScheduleByMonth
   async getPMScheduleByMonth(year) {
-    const settings = useSettingsStore()
-    
-    if (settings.isUsingSupabase) {
-      return await supabaseLogAktivitasApi.getPMScheduleByMonth(year)
-    }
-    
     const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 
     try {
@@ -134,12 +103,6 @@ export const logAktivitasApi = {
 
   // ✅ DASHBOARD CHARTS - getTotalSchedules
   async getTotalSchedules(year) {
-    const settings = useSettingsStore()
-    
-    if (settings.isUsingSupabase) {
-      return await supabaseLogAktivitasApi.getTotalSchedules(year)
-    }
-    
     try {
       console.log('[logAktivitasApi] getTotalSchedules called with year:', year)
       
@@ -179,12 +142,6 @@ export const logAktivitasApi = {
 
   // ✅ GET KALIBRASI FOR PERIOD
   async getKalibrasiForPeriod(month, year) {
-    const settings = useSettingsStore()
-    
-    if (settings.isUsingSupabase) {
-      return await supabaseLogAktivitasApi.getKalibrasiForPeriod(month, year)
-    }
-    
     const endpoint = getLogAktivitasEndpoint()
     
     try {
@@ -209,12 +166,6 @@ export const logAktivitasApi = {
 
   // ✅ GET PM FOR PERIOD
   async getPMForPeriod(month, year) {
-    const settings = useSettingsStore()
-    
-    if (settings.isUsingSupabase) {
-      return await supabaseLogAktivitasApi.getPMForPeriod(month, year)
-    }
-    
     const endpoint = getLogAktivitasEndpoint()
     
     try {
@@ -239,12 +190,6 @@ export const logAktivitasApi = {
 
   // ✅ GET ALL FOR PERIOD (PM + KALIBRASI)
   async getAllForPeriod(month, year) {
-    const settings = useSettingsStore()
-    
-    if (settings.isUsingSupabase) {
-      return await supabaseLogAktivitasApi.getAllForPeriod(month, year)
-    }
-    
     const endpoint = getLogAktivitasEndpoint()
     
     try {
@@ -267,55 +212,153 @@ export const logAktivitasApi = {
     }
   },
 
+  // ✅ CREATE LOG
+  async createLog(log) {
+    const settings = useSettingsStore()
+    const payload = toFormData({
+      action: 'create',
+      no_id: log.no_id,
+      cal_id: log.cal_id,
+      jenis: log.jenis,
+      tanggal: log.tanggal,
+      petugas: log.petugas,
+      keterangan: log.keterangan
+    })
+    try {
+      const { data } = await api.post(settings.api.logAktivitas, payload)
+      if (!data.success) {
+        throw new Error(data.message || 'Gagal menyimpan log aktivitas')
+      }
+      return data
+    } catch (error) {
+      console.error('Error in createLog:', error)
+      throw error
+    }
+  },
+
+  // ✅ UPDATE LOG
+  async updateLog(log) {
+    const settings = useSettingsStore()
+    const payload = toFormData({
+      action: 'update',
+      no: log.no,
+      no_id: log.no_id,
+      cal_id: log.cal_id,
+      jenis: log.jenis,
+      tanggal: log.tanggal,
+      petugas: log.petugas,
+      keterangan: log.keterangan
+    })
+    try {
+      const { data } = await api.post(settings.api.logAktivitas, payload)
+      if (!data.success) {
+        throw new Error(data.message || 'Gagal update log aktivitas')
+      }
+      return data
+    } catch (error) {
+      console.error('Error in updateLog:', error)
+      throw error
+    }
+  },
+
+  // ✅ DELETE LOG
+  async deleteLog(no) {
+    const settings = useSettingsStore()
+    const payload = toFormData({
+      action: 'delete',
+      no: String(no)
+    })
+    try {
+      const { data } = await api.post(settings.api.logAktivitas, payload)
+      if (!data.success) {
+        throw new Error(data.message || 'Gagal hapus log aktivitas')
+      }
+      return data
+    } catch (error) {
+      console.error('Error in deleteLog:', error)
+      throw error
+    }
+  },
+
   // ✅ LIST ALL LOGS
   async listLogs() {
     const settings = useSettingsStore()
-    
-    if (settings.isUsingSupabase) {
-      return await supabaseLogAktivitasApi.listLogs()
-    }
-    
-    const endpoint = getLogAktivitasEndpoint()
-    
     try {
-      const { data } = await api.get(endpoint, {
+      const { data } = await api.get(settings.api.logAktivitas, {
         params: { action: 'list' }
       })
-      
-      if (!data?.success) {
-        throw new Error(data?.message || 'Gagal mengambil semua log')
-      }
-      
-      return data?.data || []
+      return data.success ? data.data || [] : []
     } catch (error) {
-      console.error('[logAktivitasApi] Error in listLogs:', error)
-      return []
+      console.error('Error in listLogs:', error)
+      throw error
     }
   },
 
   // ✅ GET LOG BY NO (for detail view)
   async getLogByNo(no) {
-    const settings = useSettingsStore()
-    
-    if (settings.isUsingSupabase) {
-      return await supabaseLogAktivitasApi.getLogByNo?.(no) || null
-    }
-    
     const endpoint = getLogAktivitasEndpoint()
-    
+
     try {
       const { data } = await api.get(endpoint, {
         params: { action: 'get', no: String(no) }
       })
-      
+
       if (!data?.success) {
         return null
       }
-      
+
       return data?.item || null
     } catch (error) {
       console.error('[logAktivitasApi] Error in getLogByNo:', error)
       return null
     }
+  },
+
+  async fetchLogs(filters = {}) {
+    const settings = useSettingsStore()
+    try {
+      const { data } = await api.get(settings.api.logAktivitas, {
+        params: { action: 'list', ...filters }
+      })
+      return data.success ? data.data || [] : []
+    } catch (error) {
+      console.error('[logAktivitasApi] Gagal fetch:', error)
+      throw error
+    }
+  },
+
+  async saveLog(log) {
+    const settings = useSettingsStore()
+    try {
+      const { data } = await api.post(settings.api.logAktivitas, {
+        action: 'save',
+        ...log
+      })
+      return data
+    } catch (error) {
+      console.error('[logAktivitasApi] Gagal save:', error)
+      throw error
+    }
+  },
+
+  async updateBacklog(payload) {
+    const settings = useSettingsStore();
+    try {
+      // Ubah data menjadi URLSearchParams agar mirip form-submit
+      const params = new URLSearchParams();
+      params.append('action', 'updatebacklog');
+      for (const key in payload) {
+        params.append(key, payload[key]);
+      }
+
+      const { data } = await api.post(settings.api.logAktivitas, params, {
+        headers: { 'Content-Type': 'application/x-www-form-urlencoded' }
+      });
+      return data;
+    } catch (error) {
+      console.error('[logAktivitasApi] Gagal update backlog:', error);
+      throw error;
+    }
   }
 }
+

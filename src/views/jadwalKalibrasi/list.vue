@@ -271,7 +271,9 @@ const getEmptyJadwal = () => ({
   interval: '',
   due_date: '',
   remark: '',
-  criticality: ''
+  criticality: '',
+  backlog_status: '',
+  backlog_notes: ''
 })
 
 // State untuk modal
@@ -353,23 +355,6 @@ const documentRefCalibration = computed(() => {
   return config.value.documentRefCalibration
 })
 
-// Sync search text saat modal dibuka
-watch(isModalOpen, (val) => {
-  if (val) {
-    noIdSearch.value = editingJadwal.value.no_id || ''
-    // Reset validation state saat modal dibuka
-    if (editingJadwal.value.no_id) {
-      const found = (daftarAlat.value || []).find((t) => String(t.no_id) === String(editingJadwal.value.no_id))
-      noIdValidationState.value = {
-        isValid: !!found,
-        message: found ? '' : `No.ID "${editingJadwal.value.no_id}" tidak terdaftar di Daftar Alat`
-      }
-    } else {
-      noIdValidationState.value = { isValid: true, message: '' }
-    }
-  }
-})
-
 const refresh = () => fetchList()
 
 // ✅ Fungsi Tambah
@@ -407,7 +392,9 @@ const openEditModal = async (jadwal) => {
     interval: jadwal.interval || '',
     due_date: jadwal.due_date || '',
     remark: jadwal.remark || '',
-    criticality: jadwal.criticality || ''
+    criticality: jadwal.criticality || '',
+    backlog_status: jadwal.backlog_status || '',
+    backlog_notes: jadwal.backlog_notes || ''
   }
   isEditMode.value = true
   isModalOpen.value = true
@@ -420,62 +407,58 @@ const closeModal = () => {
   isEditMode.value = false
 }
 
-// ✅ Fungsi untuk fix encoding simbol khusus
+// ✅ Fungsi untuk fix encoding simbol khusus - DISERAGAMKAN
 const fixEncoding = (text) => {
-  if (!text) return text
-  
+  if (text === null || text === undefined) return '—'
+
   let fixed = String(text)
   
-  // Fix degree symbol (°C, °F) - harus dicek dulu sebelum plus-minus
-  fixed = fixed
-    .replace(/�\s*C/gi, '°C')
-    .replace(/�C/gi, '°C')
-    .replace(/�\s*F/gi, '°F')
-    .replace(/�F/gi, '°F')
-    .replace(/\?\s*C/gi, '°C')
-    .replace(/\?C/gi, '°C')
-    .replace(/\?\s*F/gi, '°F')
-    .replace(/\?F/gi, '°F')
-  
-  // Fix plus-minus symbol (± angka)
-  fixed = fixed
-    .replace(/�\s*\d/g, (match) => match.replace('�', '±'))
-    .replace(/\?\s*\d/g, (match) => match.replace('?', '±'))
-  
-  // HTML entities
-  fixed = fixed
+  return fixed
     .replace(/&plusmn;/g, '±')
     .replace(/&#177;/g, '±')
     .replace(/&deg;/g, '°')
     .replace(/&#176;/g, '°')
     .replace(/&micro;/g, 'µ')
     .replace(/&#181;/g, 'µ')
-  
-  return fixed
+    .replace(/\?\s*C/gi, '°C')
+    .replace(/\?C/gi, '°C')
+    .replace(/\?\s*F/gi, '°F')
+    .replace(/\?F/gi, '°F')
+    .replace(/\?\s*\d/g, (match) => match.replace('?', '±'))
 }
 
-// ✅ Fungsi Simpan (Create/Update)
+// ✅ Fungsi Simpan (Create/Update) - PERBAIKAN VALIDASI
 const saveEditingJadwal = async () => {
-  // ✅ Validasi client-side: no_id harus ada di daftar alat
-  if (editingJadwal.value.no_id) {
-    const found = (daftarAlat.value || []).find((t) => String(t.no_id) === String(editingJadwal.value.no_id))
-    if (!found) {
-      Swal.fire({
-        icon: 'error',
-        title: 'Validasi Gagal!',
-        html: `No.ID "<strong>${editingJadwal.value.no_id}</strong>" tidak terdaftar di Daftar Alat.<br><br>` +
-              `Silakan daftarkan alat terlebih dahulu di menu <strong>Daftar Alat</strong>.`,
-        confirmButtonText: 'OK'
-      })
-      return
-    }
+  // Validasi dasar
+  if (!editingJadwal.value.no_id) {
+    Swal.fire('Error', 'No. ID wajib diisi!', 'error')
+    return
   }
 
+  // Validasi daftar alat
+  const found = (daftarAlat.value || []).find((t) => String(t.no_id) === String(editingJadwal.value.no_id))
+  if (!found) {
+    Swal.fire({
+      icon: 'error',
+      title: 'Validasi Gagal!',
+      html: `No.ID "<strong>${editingJadwal.value.no_id}</strong>" tidak terdaftar.`,
+      confirmButtonText: 'OK'
+    })
+    return
+  }
+
+  // Normalisasi data sebelum simpan
+  editingJadwal.value.due_date = editingJadwal.value.due_date ? String(editingJadwal.value.due_date).trim() : ''
+
   try {
+    isSaving.value = true
     await saveJadwal(editingJadwal.value)
     closeModal()
   } catch (error) {
     console.error('Gagal menyimpan:', error)
+    Swal.fire('Error', 'Gagal menyimpan data: ' + error.message, 'error')
+  } finally {
+    isSaving.value = false
   }
 }
 
@@ -560,15 +543,26 @@ const formatAuditInfo = (jadwal) => {
 
 // Watcher: setiap data berubah, enrich dengan audit trail
 let enrichTimeout = null
-watch(refJadwal, async (newData) => {
+watch(() => refJadwal.value, (newData) => {
   if (newData && newData.length > 0) {
     // Debounce untuk menghindari pemanggilan berulang
     if (enrichTimeout) clearTimeout(enrichTimeout)
     enrichTimeout = setTimeout(async () => {
       await enrichWithAuditData()
-    }, 100)
+    }, 500) // Naikkan delay jadi 500ms agar data stabil
   }
-}, { deep: false }) // shallow watch karena array reference berubah
+}, { deep: true })
+  const onVisibility = () => {
+    if (document.visibilityState === 'visible') {
+      // Hilangkan paksa hapus cache agar tidak terjadi loop refresh yang salah
+      // Cukup panggil fetchList dengan force=true
+      fetchList(true, true)
+    }
+  }
+  onUnmounted(() => {
+    stopAutoRefresh()
+  document.removeEventListener('visibilitychange', onVisibility)
+  })
 
 onMounted(async () => {
   await fetchList()
@@ -578,18 +572,7 @@ onMounted(async () => {
   fetchDaftarAlat()
   startAutoRefresh()
 
-  const onVisibility = () => {
-    if (document.visibilityState === 'visible') {
-      localStorage.removeItem('jadwal_kalibrasi_cache')
-      fetchList(true, true) // silent
-      // enrichWithAuditData akan dipanggil otomatis oleh watcher
-    }
-  }
   document.addEventListener('visibilitychange', onVisibility)
-  onUnmounted(() => {
-    document.removeEventListener('visibilitychange', onVisibility)
-    stopAutoRefresh()
-  })
 })
 </script>
 
@@ -702,7 +685,7 @@ onMounted(async () => {
                         :disabled="!bulkDeleteMode"
                       />
                     </th>
-                    <th>No</th>
+                    <th class="no-column">No</th>
                     <th>No.ID</th>
                     <th>Description</th>
                     <th>Calibration ID</th>
@@ -713,6 +696,7 @@ onMounted(async () => {
                     <th>Due Date</th>                   
                     <th>Remark</th>                   
                     <th>Criticality</th>
+                    <!-- ✅ Kolom Status & Notes dihapus -->
                     <!-- ✅ Kolom Aksi -->
                     <th class="text-center">Aksi</th>                   
                   </tr>  
@@ -735,15 +719,16 @@ onMounted(async () => {
                         <i class="fas fa-info-circle text-muted" style="font-size: 0.75rem;"></i>
                       </span>
                     </td>
-                    <td>{{ row.description || '—' }}</td>
+                    <td>{{ fixEncoding(row.description) || '—' }}</td>
                     <td>{{ row.cal_id || '—' }}</td>
-                    <td>{{ row.parameter || '—' }}</td>
+                    <td>{{ fixEncoding(row.parameter) || '—' }}</td>
                     <td>{{ fixEncoding(row.process_range) || '—' }}</td>
                     <td>{{ fixEncoding(row.reject_error) || '—' }}</td>
                     <td>{{ row.interval || '—' }}</td>
                     <td>{{ row.due_date || '—' }}</td>
-                    <td>{{ row.remark || '—' }}</td>
+                    <td>{{ fixEncoding(row.remark) || '—' }}</td>
                     <td>{{ row.criticality || '—' }}</td>
+                    <!-- ✅ Kolom Status & Notes dihapus -->
                     <!-- ✅ Tombol Aksi -->
                     <td class="text-center">
                       <button v-if="canEdit"
@@ -1058,6 +1043,41 @@ onMounted(async () => {
   z-index: 10;
 }
 
+/* Jadwal Kalibrasi table specific styling */
+.jadwal-kalibrasi-table {
+  width: 100% !important;
+}
+.jadwal-kalibrasi-table thead th {
+  vertical-align: middle;
+  font-weight: 600;
+  background-color: #f2f7fc;
+}
+
+.jadwal-kalibrasi-table th,
+.jadwal-kalibrasi-table td {
+  white-space: nowrap;
+  padding: 0.5rem;
+}
+
+/* ✅ Terapkan logika lebar kolom serupa dengan Daftar Alat */
+.jadwal-kalibrasi-table .no-column {
+  width: 40px !important;
+  min-width: 40px !important;
+  max-width: 40px !important;
+  text-align: center;
+}
+
+.jadwal-kalibrasi-table td:nth-child(2) { /* Kolom "No" */
+  width: 40px !important;
+  min-width: 40px !important;
+  max-width: 40px !important;
+  text-align: center;
+}
+
+.jadwal-kalibrasi-table .text-center {
+  text-align: center;
+}
+
 /* Tombol Hapus Banyak - di tengah */
 .bulk-delete-toggle-btn {
   position: absolute;
@@ -1137,15 +1157,15 @@ onMounted(async () => {
 .modal-content {
   max-height: calc(100vh - 2rem);
   display: flex;
-  flex-direction: column;
-}
-
+    flex-direction: column;
+  }
+  
 .modal-body {
   max-height: calc(100vh - 200px);
   overflow-y: auto;
   flex: 1;
-}
-
+  }
+  
 /* Print button wrapper styling */
 .print-button-wrapper {
   margin-top: 0.5rem;
@@ -1178,8 +1198,8 @@ onMounted(async () => {
   .header-row {
     flex-direction: column;
     align-items: flex-start !important;
-  }
-  
+}
+
   .header-row > div {
     width: 100%;
     justify-content: space-between !important;
@@ -1207,3 +1227,4 @@ onMounted(async () => {
   }
 }
 </style>
+
