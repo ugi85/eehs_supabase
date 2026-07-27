@@ -5,7 +5,7 @@ import { useLogAktivitas } from '@/composables/useLogAktivitas'
 import { useDataChangeTrigger } from './useDataChangeTrigger'
 
 const CACHE_KEY = 'jadwal_kalibrasi_cache'
-const CACHE_DURATION = 1 * 60 * 1000 // 1 menit
+const CACHE_DURATION = 10 * 60 * 1000 // 10 menit
 
 export function useJadwalKalibrasi() {
   const refJadwal = ref([])

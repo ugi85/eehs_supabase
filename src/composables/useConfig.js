@@ -39,7 +39,7 @@ const DEFAULT_CONFIG = {
 const CONFIG_KEY = 'qms_frontend_config_v2'
 
 // Auto-refresh interval (dalam milliseconds)
-const AUTO_REFRESH_INTERVAL = 30000 // 30 detik
+const AUTO_REFRESH_INTERVAL = 60 * 60 * 1000 // 1 jam
 
 // singleton reactive state
 const config = ref({ ...DEFAULT_CONFIG })
