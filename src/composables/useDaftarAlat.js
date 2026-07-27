@@ -4,7 +4,7 @@ import { daftarAlatApi } from '@/api'
 import { useDataChangeTrigger } from './useDataChangeTrigger'
 
 const CACHE_KEY = 'daftar_alat_cache'
-const CACHE_DURATION = 60 * 1000 // 1 menit
+const CACHE_DURATION = 10 * 60 * 1000 // 10 menit
 
 export function useDaftarAlat() {
   const tools = ref([])

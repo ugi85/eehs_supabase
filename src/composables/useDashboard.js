@@ -5,7 +5,7 @@ import { logAktivitasApi } from '@/api'
 // === KONFIGURASI CACHE ===
 const CACHE_KEY = 'dashboard_data_cache'
 const CACHE_DURATION = 5 * 60 * 1000 // 5 menit
-const AUTO_REFRESH_INTERVAL = 3 * 60 * 1000 // 3 menit
+const AUTO_REFRESH_INTERVAL = 60 * 60 * 1000 // 1 jam
 
 export function useDashboard() {
   const loading = ref(false)
@@ -137,9 +137,9 @@ export function useDashboard() {
         selectedYear.value = cachedData.year || year
         
         // Update di background
-        setTimeout(() => {
-          refreshDashboardData(year)
-        }, 100)
+        // setTimeout(() => {
+        //   refreshDashboardData(year)
+        // }, 100)
         
         isInitialized.value = true
         return
@@ -229,14 +229,15 @@ export function useDashboard() {
     }
   }
 
-  // ✅ AUTO REFRESH SETIAP 3 MENIT
+  // ✅ AUTO REFRESH SETIAP 1 JAM
   const startAutoRefresh = () => {
     if (refreshIntervalId) return
     
-    refreshIntervalId = setInterval(() => {
-      if (isInitialized.value) {
-        refreshDashboardData(selectedYear.value)
-      }
+     refreshIntervalId = setInterval(() => {
+    // Hanya refresh jika tab aktif
+    if (isInitialized.value && document.visibilityState === 'visible') {
+      refreshDashboardData(selectedYear.value)
+    }
     }, AUTO_REFRESH_INTERVAL)
   }
 
