@@ -4,7 +4,7 @@ import { logAktivitasApi } from '@/api'
 
 // === KONFIGURASI CACHE ===
 const CACHE_KEY = 'dashboard_data_cache'
-const CACHE_DURATION = 5 * 60 * 1000 // 5 menit
+const CACHE_DURATION = 30 * 60 * 1000 // 30 menit
 const AUTO_REFRESH_INTERVAL = 60 * 60 * 1000 // 1 jam
 
 export function useDashboard() {
@@ -123,6 +123,7 @@ export function useDashboard() {
 
   // ✅ FETCH DENGAN CACHE + BACKGROUND UPDATE
   const fetchDashboardData = async (year = selectedYear.value, useCache = true) => {
+    if (loading.value) return;
     console.log(`[Dashboard] fetchDashboardData called: year=${year}, useCache=${useCache}`)
     
     if (useCache) {

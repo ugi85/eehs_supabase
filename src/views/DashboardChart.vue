@@ -477,7 +477,7 @@ onMounted(() => {
   fetchDashboardData()
   
   // ✅ MULAI AUTO-REFRESH
-  startAutoRefresh()
+  // startAutoRefresh()
 })
 
 onUnmounted(() => {
