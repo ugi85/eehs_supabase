@@ -2,6 +2,7 @@
 import { reactive, readonly } from 'vue'
 import permissionService from '@/services/permissionService'
 import idleTimerService from '@/services/idleTimerService'
+import { syncToSheets } from '@/services/googleSheetsService' // Import service baru
 
 const USER_STORAGE_KEY = 'current_user'
 const SESSION_STORAGE_KEY = 'session_timestamp'
@@ -31,13 +32,15 @@ const loadPermissionsForUser = (user, forceRefresh = false) => {
 /**
  * Set user yang sedang login
  */
-const setUser = (user) => {
+const setUser = async (user) => {
   state.user = user
   localStorage.setItem(USER_STORAGE_KEY, JSON.stringify(user))
   localStorage.setItem(SESSION_STORAGE_KEY, Date.now().toString())
 
   if (user && user.id) {
     state.permissions = loadPermissionsForUser(user)
+    // Backup ke Google Sheets (Async - tidak menunggu sampai selesai)
+    syncToSheets('INSERT', 'users', user).catch(err => console.error('Sync failed', err))
   } else {
     state.permissions = []
   }
@@ -237,3 +240,4 @@ export const userStore = {
   isSessionExpired,
   clearSessionData
 }
+

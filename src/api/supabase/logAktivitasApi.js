@@ -1,5 +1,6 @@
 // src/api/supabase/logAktivitasApi.js
 import { supabase, handleSupabaseError } from '@/config/supabase'
+import { withSync } from '@/api/apiWrapper'
 
 /**
  * Helper: Determine if a period is in the past
@@ -83,7 +84,8 @@ export const logAktivitasApi = {
   },
 
   async create(log) {
-    try {
+    return await withSync('log', log.no ? 'UPDATE' : 'INSERT', async () => {
+      try {
       let executeDate = log.execute_date || log.tanggal || null
       if (executeDate && /^\d{1,2}\/\d{1,2}\/\d{4}$/.test(executeDate)) {
         const [d, m, y] = executeDate.split('/')
@@ -107,9 +109,11 @@ export const logAktivitasApi = {
     } catch (error) {
       return handleSupabaseError(error)
     }
+    }, log)
   },
 
   async update(no, log) {
+    return await withSync('log', 'UPDATE', async () => {
     try {
       let executeDate = log.execute_date || log.tanggal || null
       if (executeDate && /^\d{1,2}\/\d{1,2}\/\d{4}$/.test(executeDate)) {
@@ -134,9 +138,11 @@ export const logAktivitasApi = {
     } catch (error) {
       return handleSupabaseError(error)
     }
+    }, log)
   },
 
   async delete(no) {
+    return await withSync('log', 'DELETE', async () => {
     try {
       const { error } = await supabase.from('logaktivitas').delete().eq('no', no)
       if (error) throw error
@@ -144,6 +150,7 @@ export const logAktivitasApi = {
     } catch (error) {
       return handleSupabaseError(error)
     }
+    }, { no })
   },
 
   async bulkDelete(ids = [], chunkSize = 200) {

@@ -1,5 +1,6 @@
 // src/api/supabase/userApi.js
 import { supabase, handleSupabaseError } from '@/config/supabase'
+import { withSync } from '@/api/apiWrapper'
 
 /**
  * User API - Supabase Integration
@@ -87,7 +88,8 @@ export const userApi = {
    * POST: Create new user
    */
   async createUser(user) {
-    try {
+    return await withSync('users', 'INSERT', async () => {
+      try {
       // Hash password sebelum disimpan
       const hashedPassword = await hashPassword(user.password)
       
@@ -124,12 +126,14 @@ export const userApi = {
     } catch (error) {
       return handleSupabaseError(error)
     }
+    }, { nama: user.nama, inisial: user.inisial, email: user.email, role: user.role })
   },
 
   /**
    * POST: Update existing user
    */
   async updateUser(user) {
+    return await withSync('users', 'UPDATE', async () => {
     try {
       const updateData = {
         nama: user.nama,
@@ -180,12 +184,14 @@ export const userApi = {
     } catch (error) {
       return handleSupabaseError(error)
     }
+    }, { id: user.id, nama: user.nama, inisial: user.inisial, email: user.email, role: user.role })
   },
 
   /**
    * POST: Delete user by ID
    */
   async deleteUser(id) {
+    return await withSync('users', 'DELETE', async () => {
     try {
       const { error } = await supabase
         .from('users')
@@ -201,6 +207,7 @@ export const userApi = {
     } catch (error) {
       return handleSupabaseError(error)
     }
+    }, { id })
   },
 
   /**
@@ -308,3 +315,4 @@ export const userApi = {
     }
   }
 }
+

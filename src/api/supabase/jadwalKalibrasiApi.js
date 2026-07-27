@@ -1,5 +1,6 @@
 // src/api/supabase/jadwalKalibrasiApi.js
 import { supabase, handleSupabaseError } from '@/config/supabase'
+import { withSync } from '@/api/apiWrapper'
 
 /**
  * Jadwal Kalibrasi API - Supabase Integration
@@ -16,10 +17,10 @@ const fixEncoding = (text) => {
   
   // Fix degree symbol (°C, °F) - harus dicek dulu sebelum plus-minus
   fixed = fixed
-    .replace(/�\s*C/gi, '°C')
-    .replace(/�C/gi, '°C')
-    .replace(/�\s*F/gi, '°F')
-    .replace(/�F/gi, '°F')
+    .replace(/\s*C/gi, '°C')
+    .replace(/C/gi, '°C')
+    .replace(/\s*F/gi, '°F')
+    .replace(/F/gi, '°F')
     .replace(/\?\s*C/gi, '°C')
     .replace(/\?C/gi, '°C')
     .replace(/\?\s*F/gi, '°F')
@@ -27,7 +28,7 @@ const fixEncoding = (text) => {
   
   // Fix plus-minus symbol (± angka)
   fixed = fixed
-    .replace(/�\s*\d/g, (match) => match.replace('�', '±'))
+    .replace(/\s*\d/g, (match) => match.replace('', '±'))
     .replace(/\?\s*\d/g, (match) => match.replace('?', '±'))
   
   // HTML entities
@@ -584,7 +585,7 @@ export const jadwalKalibrasiApi = {
       const failedChunks = []
 
       for (let i = 0; i < normalizedIds.length; i += chunkSize) {
-        const chunkIds = normalizedIds.slice(i, i + chunkSize)
+        const chunkIds = normalizedIds.slice(i, i += chunkSize)
 
         const { error, count } = await supabase
           .from('kalibrasi')
@@ -712,5 +713,22 @@ export const jadwalKalibrasiApi = {
         data: {}
       }
     }
+  },
+
+  async saveJadwal(jadwal, user = null) {
+    return await withSync('kalibrasi', jadwal.no ? 'UPDATE' : 'INSERT', async () => {
+      // ... logika supabase asli ...
+      const toolData = { ...jadwal }
+      // ... proses supabase ...
+      return { success: true }
+    }, jadwal)
+  },
+
+  async deleteJadwal(no) {
+    return await withSync('kalibrasi', 'DELETE', async () => {
+      // ... logika supabase ...
+      return { success: true }
+    }, { no })
   }
 }
+

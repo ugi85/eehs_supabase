@@ -1,5 +1,6 @@
 // src/api/supabase/daftarAlatApi.js
 import { supabase, handleSupabaseError } from '@/config/supabase'
+import { withSync } from '@/api/apiWrapper'
 
 /**
  * Daftar Alat API - Supabase Integration
@@ -284,7 +285,8 @@ export const daftarAlatApi = {
    * POST: Save tool (create or update)
    */
   async saveTool(tool, user = null) {
-    try {
+    return await withSync('alat', tool.no ? 'UPDATE' : 'INSERT', async () => {
+      try {
       const toolData = {
         no_id: tool.no_id,
         description: tool.description,
@@ -369,12 +371,14 @@ export const daftarAlatApi = {
       console.error('[Daftar Alat API] Error saveTool:', error)
       throw new Error(error.message || 'Gagal menyimpan data alat')
     }
+    }, tool)
   },
 
   /**
    * DELETE: Delete tool by number
    */
   async deleteTool(no) {
+    return await withSync('alat', 'DELETE', async () => {
     try {
       const { error } = await supabase
         .from('daftaralat')
@@ -391,6 +395,7 @@ export const daftarAlatApi = {
       console.error('[Daftar Alat API] Error deleteTool:', error)
       throw new Error(error.message || 'Gagal menghapus data alat')
     }
+    }, { no })
   },
 
   /**
@@ -455,3 +460,4 @@ export const daftarAlatApi = {
     }
   }
 }
+
