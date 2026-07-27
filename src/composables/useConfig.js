@@ -205,14 +205,18 @@ const startAutoRefresh = () => {
     return
   }
   
-  console.log('[useConfig] Starting auto-refresh every', AUTO_REFRESH_INTERVAL / 1000, 'seconds')
-  
+  console.log('[useConfig] Starting auto-refresh')
   refreshInterval = setInterval(async () => {
+    // ✅ Tambahkan pengecekan ini:
+    if (document.visibilityState === 'visible') {
     console.log('[useConfig] Auto-refreshing config...')
     const hasChanges = await loadConfig(true) // silent = true
     if (hasChanges) {
       console.log('[useConfig] Config changed, UI updated')
     }
+    } else {
+      console.log('[useConfig] Tab hidden, auto-refresh skipped')
+}
   }, AUTO_REFRESH_INTERVAL)
 }
 
@@ -451,7 +455,7 @@ const getFullAddress = computed(() => {
 // Initialize on module load
 if (typeof window !== 'undefined') {
   loadConfig()
-  startAutoRefresh() // Start auto-refresh
+  // startAutoRefresh() // Start auto-refresh
 }
 
 export function useFrontendConfig() {
