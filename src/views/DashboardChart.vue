@@ -294,9 +294,7 @@ const {
   currentMonth,
   currentMonthRemaining,
   currentMonthStats,
-  fetchDashboardData,
-  startAutoRefresh,
-  stopAutoRefresh
+  fetchDashboardData
 } = useDashboard()
 
 const chartRef = ref(null)
@@ -475,15 +473,9 @@ const retryFetch = async () => {
 onMounted(() => {
   // ✅ INISIALISASI DENGAN CACHE
   fetchDashboardData()
-  
-  // ✅ MULAI AUTO-REFRESH
-  // startAutoRefresh()
 })
 
 onUnmounted(() => {
-  // ✅ STOP AUTO-REFRESH
-  stopAutoRefresh()
-
   // ✅ DESTROY CHART
   if (chartInstance) {
     chartInstance.destroy()

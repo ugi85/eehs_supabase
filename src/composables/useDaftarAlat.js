@@ -13,7 +13,6 @@ export function useDaftarAlat() {
   const isDeleting = ref(false)
   const statusFilter = ref('active') // 'active' | 'obsolete' | 'all'
   let dataTableInstance = null
-  let refreshTimer = null
 
   const { onDaftarAlatChange } = useDataChangeTrigger()
 
@@ -85,24 +84,6 @@ export function useDaftarAlat() {
     await fetchList(true) // filter change = show loading
     await initDataTable()
   }
-
-  // === Auto-refresh setiap 1 menit (silent — tidak tampilkan loading, tidak reinit DataTable) ===
-  const startAutoRefresh = () => {
-    stopAutoRefresh()
-    refreshTimer = setInterval(async () => {
-      localStorage.removeItem(`${CACHE_KEY}_${statusFilter.value}`)
-      await fetchList(true, true) // silent — data update di background, DataTable tetap
-    }, CACHE_DURATION)
-  }
-
-  const stopAutoRefresh = () => {
-    if (refreshTimer) {
-      clearInterval(refreshTimer)
-      refreshTimer = null
-    }
-  }
-
-  onUnmounted(() => stopAutoRefresh())
 
   // === CREATE / UPDATE ===
   const saveTool = async (tool) => {
@@ -186,6 +167,11 @@ export function useDaftarAlat() {
       localStorage.removeItem(`${CACHE_KEY}_obsolete`)
       localStorage.removeItem(`${CACHE_KEY}_all`)
 
+      // Trigger dashboard refresh after bulk delete
+      window.dispatchEvent(new CustomEvent('dashboard:needs-refresh', {
+        detail: { action: 'bulk-delete', resource: 'daftaralat', ids }
+      }))
+
       await fetchList(true)
       await initDataTable()
 
@@ -209,8 +195,6 @@ export function useDaftarAlat() {
     bulkDeleteTools,
     isSaving,
     isDeleting,
-    initDataTable,
-    startAutoRefresh,
-    stopAutoRefresh
+    initDataTable
   }
 }

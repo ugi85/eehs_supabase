@@ -13,7 +13,6 @@ export function useJadwalKalibrasi() {
   const isSaving = ref(false)
   const isDeleting = ref(false)
   let dataTableInstance = null
-  let refreshTimer = null
 
   const { onKalibrasiChange } = useDataChangeTrigger()
 
@@ -158,6 +157,12 @@ export function useJadwalKalibrasi() {
       const result = await jadwalKalibrasiApi.bulkDelete(ids)
 
       localStorage.removeItem(CACHE_KEY)
+
+      // Trigger dashboard refresh after bulk delete
+      window.dispatchEvent(new CustomEvent('dashboard:needs-refresh', {
+        detail: { action: 'bulk-delete', resource: 'jadwalkalibrasi', ids }
+      }))
+
       await fetchList(true)
       await initDataTable()
 
@@ -169,21 +174,6 @@ export function useJadwalKalibrasi() {
       isDeleting.value = false
     }
   }
-
-  // === Auto-refresh (silent — tidak reinit DataTable) ===
-  const startAutoRefresh = () => {
-    stopAutoRefresh()
-    refreshTimer = setInterval(async () => {
-      localStorage.removeItem(CACHE_KEY)
-      await fetchList(true, true) // silent — DataTable tetap, data update di background
-    }, CACHE_DURATION)
-  }
-
-  const stopAutoRefresh = () => {
-    if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null }
-  }
-
-  onUnmounted(() => stopAutoRefresh())
 
   const { createLog } = useLogAktivitas()
 
@@ -200,6 +190,6 @@ export function useJadwalKalibrasi() {
   return {
     refJadwal, loading, isSaving, isDeleting,
     fetchList, saveJadwal, deleteJadwal, bulkDeleteJadwal, saveLogActivity,
-    initDataTable, startAutoRefresh, stopAutoRefresh
+    initDataTable
   }
 }

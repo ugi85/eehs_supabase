@@ -78,6 +78,10 @@ const saveBacklog = async () => {
     backlogModal.value.row.backlog_updated_by = updatedBy
     if (result?.data?.backlog_history) backlogModal.value.row.backlog_history = result.data.backlog_history
     $('#backlogModalPM').modal('hide')
+    localStorage.removeItem('dashboard_data_cache')
+    window.dispatchEvent(new CustomEvent('dashboard:needs-refresh', {
+      detail: { source: 'log-pm-backlog-update', log_no: backlogModal.value.row.log_no }
+    }))
     Swal.fire({ icon: 'success', title: 'Berhasil!', text: 'Backlog berhasil disimpan', timer: 1200, showConfirmButton: false })
   } catch (error) {
     Swal.fire({ icon: 'error', title: 'Gagal!', text: error.message || 'Gagal menyimpan backlog' })
@@ -339,6 +343,10 @@ const saveToLogAktivitas = async (row) => {
       timer: 1200,
       showConfirmButton: false
     })
+    localStorage.removeItem('dashboard_data_cache')
+    window.dispatchEvent(new CustomEvent('dashboard:needs-refresh', {
+      detail: { source: 'log-pm-create', no_id: row['No.ID'], cal_id: `${row['No.ID']}.PM` }
+    }))
     
   } catch (error) {
     console.error('❌ Gagal simpan:', error)
