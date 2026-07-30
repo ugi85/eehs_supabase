@@ -17,9 +17,7 @@ const {
   deleteJadwal,
   bulkDeleteJadwal,
   isSaving,
-  initDataTable,
-  startAutoRefresh,
-  stopAutoRefresh
+  initDataTable
 } = useJadwalKalibrasi()
 
 const { config } = useFrontendConfig()
@@ -97,6 +95,9 @@ const confirmImport = async () => {
     await fetchList(true)
     await nextTick()
     await initDataTable()
+    window.dispatchEvent(new CustomEvent('dashboard:needs-refresh', {
+      detail: { source: 'jadwalkalibrasi-import' }
+    }))
 
     // Navigasi ke halaman terakhir agar data baru terlihat
     if (inserted > 0) {
@@ -576,7 +577,6 @@ onMounted(async () => {
   await nextTick()
   await initDataTable()
   fetchDaftarAlat()
-  startAutoRefresh()
 
   const onVisibility = () => {
     if (document.visibilityState === 'visible') {
@@ -588,7 +588,6 @@ onMounted(async () => {
   document.addEventListener('visibilitychange', onVisibility)
   onUnmounted(() => {
     document.removeEventListener('visibilitychange', onVisibility)
-    stopAutoRefresh()
   })
 })
 </script>

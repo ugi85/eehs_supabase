@@ -7,7 +7,7 @@ import { useExcelImport } from '@/composables/useExcelImport'
 import { daftarAlatApi } from '@/api'
 import { printService } from '@/services/printService'
 
-const { tools, loading, fetchList, saveTool, isSaving, deleteTool, bulkDeleteTools, startAutoRefresh, statusFilter, setStatusFilter, initDataTable } = useDaftarAlat()
+const { tools, loading, fetchList, saveTool, isSaving, deleteTool, bulkDeleteTools, statusFilter, setStatusFilter, initDataTable } = useDaftarAlat()
 const { config } = useFrontendConfig()
 const permission = usePermissions()
 
@@ -64,6 +64,9 @@ const confirmImport = async () => {
     await fetchList(true)
     await nextTick()
     await initDataTable()
+    window.dispatchEvent(new CustomEvent('dashboard:needs-refresh', {
+      detail: { source: 'daftaralat-import' }
+    }))
 
     // Navigasi ke halaman terakhir DataTable agar data baru terlihat
     if (inserted > 0) {
@@ -365,8 +368,6 @@ const formatAuditInfo = (tool) => {
 onMounted(async () => {
   await fetchList()
   await nextTick()
-
-  startAutoRefresh()
   await initDataTable()
 })
 </script>

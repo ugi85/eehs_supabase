@@ -86,6 +86,10 @@ const saveBacklog = async () => {
     backlogModal.value.row.backlog_updated_by = updatedBy
     if (result?.data?.backlog_history) backlogModal.value.row.backlog_history = result.data.backlog_history
     $('#backlogModalKalibrasi').modal('hide')
+    localStorage.removeItem('dashboard_data_cache')
+    window.dispatchEvent(new CustomEvent('dashboard:needs-refresh', {
+      detail: { source: 'log-kalibrasi-backlog-update', log_no: backlogModal.value.row.log_no }
+    }))
     Swal.fire({ icon: 'success', title: 'Berhasil!', text: 'Backlog berhasil disimpan', timer: 1200, showConfirmButton: false })
   } catch (error) {
     Swal.fire({ icon: 'error', title: 'Gagal!', text: error.message || 'Gagal menyimpan backlog' })
@@ -377,6 +381,10 @@ const saveToLogAktivitas = async (row) => {
       timer: 1200,
       showConfirmButton: false
     })
+    localStorage.removeItem('dashboard_data_cache')
+    window.dispatchEvent(new CustomEvent('dashboard:needs-refresh', {
+      detail: { source: 'log-kalibrasi-create', no_id: row['No.ID'], cal_id: row['Calibration Id.'] }
+    }))
     
     // ❌ TIDAK ADA: loading.value, fetchData(), atau setTimeout
     

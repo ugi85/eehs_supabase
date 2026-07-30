@@ -38,15 +38,11 @@ const DEFAULT_CONFIG = {
 
 const CONFIG_KEY = 'qms_frontend_config_v2'
 
-// Auto-refresh interval (dalam milliseconds)
-const AUTO_REFRESH_INTERVAL = 60 * 60 * 1000 // 1 jam
-
 // singleton reactive state
 const config = ref({ ...DEFAULT_CONFIG })
 const isSaving = ref(false)
 const previewLogo = ref(null)
 const isLoading = ref(false)
-let refreshInterval = null
 
 // ✅ Mapping key dari Supabase (deskripsi) ke format config frontend
 const SUPABASE_TO_FRONTEND_MAPPING = {
@@ -195,37 +191,6 @@ const loadConfig = async (silent = false) => {
       console.log('[useConfig] Load complete. isLoading:', isLoading.value)
       console.log('[useConfig] Final previewLogo:', previewLogo.value ? 'ADA' : 'KOSONG')
     }
-  }
-}
-
-// ✅ Start auto-refresh config
-const startAutoRefresh = () => {
-  if (refreshInterval) {
-    console.log('[useConfig] Auto-refresh already running')
-    return
-  }
-  
-  console.log('[useConfig] Starting auto-refresh')
-  refreshInterval = setInterval(async () => {
-    // ✅ Tambahkan pengecekan ini:
-    if (document.visibilityState === 'visible') {
-    console.log('[useConfig] Auto-refreshing config...')
-    const hasChanges = await loadConfig(true) // silent = true
-    if (hasChanges) {
-      console.log('[useConfig] Config changed, UI updated')
-    }
-    } else {
-      console.log('[useConfig] Tab hidden, auto-refresh skipped')
-}
-  }, AUTO_REFRESH_INTERVAL)
-}
-
-// ✅ Stop auto-refresh
-const stopAutoRefresh = () => {
-  if (refreshInterval) {
-    clearInterval(refreshInterval)
-    refreshInterval = null
-    console.log('[useConfig] Auto-refresh stopped')
   }
 }
 
@@ -455,7 +420,6 @@ const getFullAddress = computed(() => {
 // Initialize on module load
 if (typeof window !== 'undefined') {
   loadConfig()
-  // startAutoRefresh() // Start auto-refresh
 }
 
 export function useFrontendConfig() {
@@ -476,9 +440,7 @@ export function useFrontendConfig() {
     deleteLogo,
     resetConfig,
     loadConfig,
-    refreshConfig,      // NEW: Manual refresh
-    startAutoRefresh,   // NEW: Start auto-refresh
-    stopAutoRefresh,    // NEW: Stop auto-refresh
+    refreshConfig,
     updateLogo,
     updateFavicon,
     updateTitle

@@ -5,7 +5,8 @@ import { logAktivitasApi } from '@/api'
 // === KONFIGURASI CACHE ===
 const CACHE_KEY = 'dashboard_data_cache'
 const CACHE_DURATION = 30 * 60 * 1000 // 30 menit
-const AUTO_REFRESH_INTERVAL = 60 * 60 * 1000 // 1 jam
+const DASHBOARD_REFRESH_EVENT = 'dashboard:needs-refresh'
+const DATA_VERSION_CREATED_EVENT = 'data-version-created'
 
 export function useDashboard() {
   const loading = ref(false)
@@ -19,8 +20,6 @@ export function useDashboard() {
   const kalibrasiMonthly = ref([])
   const pmMonthly = ref([])
   const selectedYear = ref(new Date().getFullYear().toString())
-  
-  let refreshIntervalId = null
 
   // ✅ CHART DATA - REACTIVE KE DATA BULANAN
   const chartData = computed(() => {
@@ -137,10 +136,12 @@ export function useDashboard() {
         pmMonthly.value = cachedData.pmMonthly || []
         selectedYear.value = cachedData.year || year
         
-        // Update di background
-        // setTimeout(() => {
-        //   refreshDashboardData(year)
-        // }, 100)
+        // Background refresh untuk memastikan halaman dashboard selalu menampilkan data terbaru
+        setTimeout(() => {
+          refreshDashboardData(year).catch(err => {
+            console.warn('[Dashboard] Background refresh failed:', err)
+          })
+        }, 100)
         
         isInitialized.value = true
         return
@@ -230,44 +231,19 @@ export function useDashboard() {
     }
   }
 
-  // ✅ AUTO REFRESH SETIAP 1 JAM
-  const startAutoRefresh = () => {
-    if (refreshIntervalId) return
-    
-     refreshIntervalId = setInterval(() => {
-    // Hanya refresh jika tab aktif
-    if (isInitialized.value && document.visibilityState === 'visible') {
-      refreshDashboardData(selectedYear.value)
-    }
-    }, AUTO_REFRESH_INTERVAL)
-  }
-
-  // ✅ STOP AUTO REFRESH
-  const stopAutoRefresh = () => {
-    if (refreshIntervalId) {
-      clearInterval(refreshIntervalId)
-      refreshIntervalId = null
-    }
-  }
-
-  // ✅ CLEANUP SAAT COMPOSABLE DIHAPUS
-  onUnmounted(() => {
-    stopAutoRefresh()
-  })
-
-  // ✅ LISTEN FOR DATA VERSION CHANGES
+  // ✅ LISTEN FOR DATA CHANGE EVENTS
   onMounted(() => {
-    const handleDataVersionChange = (event) => {
-      console.log('[Dashboard] Data version changed, refreshing...', event.detail)
-      // Force refresh without cache
-      fetchDashboardData(selectedYear.value, false)
+    const handleDataChangeEvent = async (event) => {
+      console.log('[Dashboard] Data change event received:', event.type, event.detail)
+      await fetchDashboardData(selectedYear.value, false)
     }
 
-    window.addEventListener('data-version-created', handleDataVersionChange)
+    window.addEventListener(DASHBOARD_REFRESH_EVENT, handleDataChangeEvent)
+    window.addEventListener(DATA_VERSION_CREATED_EVENT, handleDataChangeEvent)
 
-    // Cleanup listener on unmount
     onUnmounted(() => {
-      window.removeEventListener('data-version-created', handleDataVersionChange)
+      window.removeEventListener(DASHBOARD_REFRESH_EVENT, handleDataChangeEvent)
+      window.removeEventListener(DATA_VERSION_CREATED_EVENT, handleDataChangeEvent)
     })
   })
 
@@ -375,8 +351,6 @@ export function useDashboard() {
     fetchDashboardData,
     refreshData,
     changeYear,
-    startAutoRefresh,
-    stopAutoRefresh,
     calculatePercentage    // ✅ Export helper jika dibutuhkan di view
   }
 }

@@ -209,14 +209,21 @@ export function useLogAktivitas() {
     }
   }
 
+  const reloadLogs = async (silent = false) => {
+    if (filterType.value === 'all') {
+      return await fetchAllLogs(silent)
+    }
+    return await fetchData()
+  }
+
   async function createLog(logData) {
     isSaving.value = true
     loading.value = true
     try {
       const response = await logAktivitasApi.createLog({ ...logData, petugas: logData.petugas || 'Unknown' })
       
-      // ✅ PERBAIKAN: Gunakan fetchData() agar sesuai filter aktif (bukan fetchAllLogs)
-      await fetchData()
+      // Reload correct data set based on current filter mode
+      await reloadLogs()
       
       // ✅ SYNC: Clear dashboard cache agar angka update realtime
       syncDashboard()
@@ -237,8 +244,8 @@ export function useLogAktivitas() {
     try {
       const response = await logAktivitasApi.updateLog(logData)
       
-      // ✅ PERBAIKAN: Fetch sesuai filter aktif + sync dashboard
-      await fetchData()
+      // Reload correct data set based on current filter mode
+      await reloadLogs()
       syncDashboard()
       
       closeFormDialog()
@@ -256,8 +263,8 @@ export function useLogAktivitas() {
     try {
       await logAktivitasApi.delete(no)
       
-      // ✅ PERBAIKAN: Fetch sesuai filter aktif + sync dashboard
-      await fetchData()
+      // Reload correct data set based on current filter mode
+      await reloadLogs()
       syncDashboard()
       
       return true
@@ -273,8 +280,8 @@ export function useLogAktivitas() {
     try {
       const result = await logAktivitasApi.bulkDelete(ids)
       
-      // ✅ PERBAIKAN: Fetch sesuai filter aktif + sync dashboard
-      await fetchData()
+      // Reload correct data set based on current filter mode
+      await reloadLogs()
       syncDashboard()
       
       return result

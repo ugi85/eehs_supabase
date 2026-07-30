@@ -68,6 +68,15 @@ const initDT = async () => {
   })
 }
 
+const refreshTable = async () => {
+  if (dtInstance) {
+    try { dtInstance.destroy(true) } catch (e) {}
+    dtInstance = null
+  }
+  await nextTick()
+  await initDT()
+}
+
 // Print
 const printDate = ref('')
 const handlePrint = () => {
@@ -80,24 +89,11 @@ const handlePrint = () => {
   printService.printAllActivity(displayedLogs.value, 'All', String(now.getFullYear()))
 }
 
-// Auto-refresh
-let refreshTimer = null
-
 const refresh = async () => {
   pageError.value = null
   await fetchAllLogs(true) // silent
   setBacklogFilter(backlogFilter.value)
-  // DataTable tidak di-reinit saat background refresh
-  // Data di tbody sudah diupdate Vue, DataTable akan reflect saat user interaksi berikutnya
-}
-
-const startAutoRefresh = () => {
-  if (refreshTimer) clearInterval(refreshTimer)
-  refreshTimer = setInterval(refresh, 60 * 1000)
-}
-
-const stopAutoRefresh = () => {
-  if (refreshTimer) { clearInterval(refreshTimer); refreshTimer = null }
+  await refreshTable()
 }
 
 // Bulk delete
@@ -147,6 +143,7 @@ const handleBulkDelete = async () => {
   const resultBulk = await bulkDeleteLogs(selectedLogs.value)
   selectedLogs.value = []; isSelectAll.value = false; bulkDeleteMode.value = false
   await setBacklogFilter(backlogFilter.value)
+  await refreshTable()
   if (resultBulk?.failedChunks?.length) {
     Swal.fire({
       icon: 'warning',
@@ -194,6 +191,9 @@ const saveBacklog = async () => {
     backlogModal.value.row.backlog_updated_by = updatedBy
     if (result?.data?.backlog_history) backlogModal.value.row.backlog_history = result.data.backlog_history
     $('#allAktivitasBacklogModal').modal('hide')
+    window.dispatchEvent(new CustomEvent('dashboard:needs-refresh', {
+      detail: { source: 'log-activity-backlog-update', no: backlogModal.value.row.no }
+    }))
     Swal.fire({ icon: 'success', title: 'Berhasil!', text: 'Backlog berhasil disimpan', timer: 1200, showConfirmButton: false })
   } catch (error) {
     Swal.fire({ icon: 'error', title: 'Gagal!', text: error.message || 'Gagal menyimpan backlog' })
@@ -216,6 +216,7 @@ const handleSave = async () => {
     await handleSubmit()
     $('#logFormModal').modal('hide')
     await setBacklogFilter(backlogFilter.value)
+    await refreshTable()
     Swal.fire('Berhasil!', 'Log aktivitas berhasil diupdate', 'success')
   } catch (error) {
     Swal.fire('Error!', error.message || 'Gagal update log', 'error')
@@ -233,6 +234,7 @@ const handleDelete = async (no, noId, calId) => {
   if (!result.isConfirmed) return
   await deleteLog(no)
   await setBacklogFilter(backlogFilter.value)
+  await refreshTable()
   Swal.fire('Dihapus!', 'Log aktivitas berhasil dihapus.', 'success')
 }
 
@@ -283,7 +285,6 @@ onMounted(async () => {
   try {
     await initAllActivities()
     await initDT()
-    startAutoRefresh()
   } catch (error) {
     pageError.value = error.message || 'Gagal memuat halaman'
     Swal.fire('Error!', error.message || 'Gagal memuat data', 'error')
@@ -304,7 +305,6 @@ onMounted(async () => {
     document.removeEventListener('visibilitychange', onVisibilityChange)
     window.removeEventListener('beforeprint', onBeforePrint)
     window.removeEventListener('afterprint', onAfterPrint)
-    stopAutoRefresh()
     if (dtInstance) { try { dtInstance.destroy() } catch (e) {} dtInstance = null }
   })
 })
