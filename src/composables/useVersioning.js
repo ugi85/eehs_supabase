@@ -6,19 +6,31 @@ export function useVersioning() {
   const versions = ref([])
   const currentVersion = ref(null)
   const loading = ref(false)
+  const totalVersions = ref(0)
+  const versionPage = ref(1)
+  const versionPageSize = ref(5)
+  const totalPages = computed(() => Math.max(1, Math.ceil(totalVersions.value / versionPageSize.value)))
 
-  // ✅ Get all versions
-  const fetchVersions = async () => {
+  // ✅ Get paged versions
+  const fetchVersions = async ({ page = versionPage.value, pageSize = versionPageSize.value } = {}) => {
     try {
       loading.value = true
-      const { data, error } = await supabase
+      versionPage.value = page
+      versionPageSize.value = pageSize
+
+      const from = (page - 1) * pageSize
+      const to = from + pageSize - 1
+
+      const { data, count, error } = await supabase
         .from('data_versions')
-        .select('*')
+        .select('*', { count: 'exact' })
         .order('snapshot_date', { ascending: false })
+        .range(from, to)
 
       if (error) throw error
       versions.value = data || []
-      return { success: true, data: versions.value }
+      totalVersions.value = count || 0
+      return { success: true, data: versions.value, count: totalVersions.value }
     } catch (error) {
       return handleSupabaseError(error)
     } finally {
@@ -60,7 +72,8 @@ export function useVersioning() {
         .neq('version_id', version.version_id)
 
       currentVersion.value = version
-      await fetchVersions()
+      versionPage.value = 1
+      await fetchVersions({ page: 1, pageSize: versionPageSize.value })
 
       return { success: true, data: version }
     } catch (error) {
@@ -141,6 +154,10 @@ export function useVersioning() {
     versions: computed(() => versions.value),
     currentVersion: computed(() => currentVersion.value),
     loading: computed(() => loading.value),
+    totalVersions: computed(() => totalVersions.value),
+    versionPage,
+    versionPageSize,
+    totalPages,
     fetchVersions,
     createVersion,
     getVersionForPeriod,

@@ -117,6 +117,45 @@
                           </tbody>
                         </table>
                       </div>
+                      <div class="d-flex justify-content-between align-items-center mt-3">
+                        <div class="form-inline">
+                          <label class="mr-2 mb-0">Tampil</label>
+                          <select
+                            class="form-control form-control-sm"
+                            v-model.number="versionPageSize"
+                            @change="changeVersionPageSize(versionPageSize)"
+                          >
+                            <option v-for="size in [5, 10, 20, 50]" :key="size" :value="size">
+                              {{ size }}
+                            </option>
+                          </select>
+                          <span class="ml-3 text-muted">Total {{ totalVersions }} versi</span>
+                        </div>
+                        <div class="btn-group btn-group-sm" role="group" aria-label="Pagination">
+                          <button
+                            type="button"
+                            class="btn btn-secondary"
+                            :disabled="versionPage === 1"
+                            @click="goToVersionPage(versionPage - 1)"
+                          >
+                            Sebelumnya
+                          </button>
+                          <button
+                            type="button"
+                            class="btn btn-light disabled"
+                          >
+                            Halaman {{ versionPage }} / {{ totalPages }}
+                          </button>
+                          <button
+                            type="button"
+                            class="btn btn-secondary"
+                            :disabled="versionPage === totalPages"
+                            @click="goToVersionPage(versionPage + 1)"
+                          >
+                            Berikutnya
+                          </button>
+                        </div>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -594,6 +633,10 @@ const {
 const {
   versions,
   versioningLoading,
+  totalVersions,
+  versionPage,
+  versionPageSize,
+  totalPages,
   fetchVersions,
   createVersion
 } = useVersioning()
@@ -985,6 +1028,17 @@ const confirmAndSave = async () => {
   }
 }
 
+// Pagination helpers for version history
+const goToVersionPage = async (page) => {
+  if (page < 1 || page > totalPages.value || page === versionPage.value) return
+  await fetchVersions({ page, pageSize: versionPageSize.value })
+}
+
+const changeVersionPageSize = async (size) => {
+  if (size === versionPageSize.value) return
+  await fetchVersions({ page: 1, pageSize: size })
+}
+
 // ✅ CREATE NEW DATA VERSION
 const createNewVersion = async () => {
   if (!newVersionDescription.value.trim()) return
@@ -1003,7 +1057,7 @@ const createNewVersion = async () => {
           const result = await createVersion(newVersionDescription.value)
           if (result.success) {
             newVersionDescription.value = ''
-            await fetchVersions()
+            await fetchVersions({ page: 1, pageSize: versionPageSize.value })
             if (window.Swal) {
               window.Swal.fire({
                 icon: 'success',
