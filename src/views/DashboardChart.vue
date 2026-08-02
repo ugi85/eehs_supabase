@@ -25,7 +25,7 @@
             <div class="small-box bg-info">
               <div class="inner">
                 <h3>{{ totalEquipment || 0 }}</h3>
-                <p>Total Peralatan</p>
+                <p>Total Alat</p>
               </div>
               <div class="icon">
                 <i class="fas fa-cogs"></i>
