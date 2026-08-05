@@ -313,8 +313,7 @@ export const logAktivitasApi = {
     // Filter valid items untuk bulan ini
     const validItems = (kalibrasiData || []).filter(item => {
       if (!item.due_date || !item.due_date.toLowerCase().includes(monthShort)) return false
-      // ✅ PERBAIKAN: Jangan exclude obsolete di bulan berjalan agar total count tetap konsisten
-      // if (!isPast && statusMap[item.no_id] === 'obsolete') return false
+      if (statusMap[item.no_id] === 'obsolete') return false
 
       const intervalMonths = parseIntervalMonths(item.int)
       if (intervalMonths <= 12) return true // Yearly: selalu tampil
@@ -359,8 +358,7 @@ export const logAktivitasApi = {
     // Filter equipment dengan jadwal PM untuk bulan ini
     const monthData = (alatData || []).filter(item => {
       if (item.pm_yn !== 'Y') return false
-      // ✅ PERBAIKAN: Jangan exclude obsolete di bulan berjalan agar total count tetap konsisten
-      // if (!isPastPeriodCheck && item.status === 'obsolete') return false
+      if (item.status === 'obsolete') return false
       if (item['6_monthly'] && item['6_monthly'] !== 'NA' && item['6_monthly'] !== '-') {
         if (item['6_monthly'].toLowerCase().includes(monthShort)) return true
       }
@@ -443,8 +441,7 @@ export const logAktivitasApi = {
       })
 
       const filtered = (kalibrasiData || []).filter(item => {
-        // ✅ PERBAIKAN: Jangan exclude obsolete di bulan berjalan agar tetap tampil di tabel aktivitas
-        // if (!isPastPeriod && alatStatusMap[item.no_id] === 'obsolete') return false
+        if (alatStatusMap[item.no_id] === 'obsolete') return false
         if (!item.due_date) return false
         if (!item.due_date.toLowerCase().includes(monthShort)) return false
 
@@ -517,7 +514,12 @@ export const logAktivitasApi = {
       const monthIndex = months.indexOf(month)
       const monthNum = String(monthIndex + 1).padStart(2, '0')
 
-      const { data: alatData, error: alatError } = await supabase.from('daftaralat').select('*').eq('pm_yn', 'Y').order('no_id', { ascending: true })
+      const { data: alatData, error: alatError } = await supabase
+        .from('daftaralat')
+        .select('*')
+        .eq('pm_yn', 'Y')
+        .or('status.is.null,status.neq.obsolete')
+        .order('no_id', { ascending: true })
       if (alatError) throw alatError
 
       const now = new Date()
