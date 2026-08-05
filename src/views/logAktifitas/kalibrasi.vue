@@ -157,7 +157,6 @@ const dataLoaded = ref(false)
 const savingRows = ref(new Set())
 const statusFilter = ref('all') // 'all' | 'selesai' | 'belum'
 const searchQuery = ref('') // Kolom pencarian
-const showObsolete = ref(true) // Toggle untuk show/hide data obsolete
 
 const filteredLogs = computed(() => {
   let result = logs.value
@@ -166,8 +165,8 @@ const filteredLogs = computed(() => {
   if (statusFilter.value === 'selesai') result = result.filter(r => r.status === 'Selesai')
   if (statusFilter.value === 'belum') result = result.filter(r => r.status !== 'Selesai')
 
-  // Filter by obsolete status
-  if (!showObsolete.value) result = result.filter(r => r.equipment_status !== 'obsolete')
+  // Exclude obsolete equipment
+  result = result.filter(r => r.equipment_status !== 'obsolete')
   
   // Filter by search query
   if (searchQuery.value) {
@@ -473,11 +472,6 @@ onMounted(async () => {
               <button type="button" class="btn" :class="statusFilter === 'selesai' ? 'btn-success' : 'btn-outline-success'" @click="statusFilter = 'selesai'">Selesai</button>
               <button type="button" class="btn" :class="statusFilter === 'belum' ? 'btn-danger' : 'btn-outline-danger'" @click="statusFilter = 'belum'">Belum</button>
             </div>
-            <!-- Toggle Obsolete -->
-            <button type="button" class="btn btn-sm mr-2" :class="showObsolete ? 'btn-outline-secondary' : 'btn-secondary'" @click="showObsolete = !showObsolete" v-if="dataLoaded && logs.length > 0" title="Show/Hide data obsolete">
-              <i class="fas mr-1" :class="showObsolete ? 'fa-eye' : 'fa-eye-slash'"></i>
-              <span class="d-none d-md-inline">{{ showObsolete ? '' : '' }}</span>
-            </button>
             <!-- Search input -->
             <div class="form-group mr-2" style="margin-bottom: 0;">
               <input 
