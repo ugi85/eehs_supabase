@@ -1,0 +1,213 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>PM Data Raw Test</title>
+    <script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2"></script>
+    <style>
+        body {
+            font-family: 'Courier New', monospace;
+            padding: 20px;
+            background: #1e1e1e;
+            color: #d4d4d4;
+        }
+        .container {
+            max-width: 1200px;
+            margin: 0 auto;
+        }
+        h1 { color: #4ec9b0; }
+        h2 { color: #dcdcaa; margin-top: 30px; }
+        .summary {
+            background: #252526;
+            padding: 15px;
+            border-left: 4px solid #4ec9b0;
+            margin: 20px 0;
+        }
+        .log-entry {
+            background: #252526;
+            padding: 10px;
+            margin: 5px 0;
+            border-left: 3px solid #569cd6;
+            font-size: 12px;
+        }
+        .match { border-left-color: #4ec9b0; }
+        .nomatch { border-left-color: #f48771; }
+        button {
+            background: #0e639c;
+            color: white;
+            border: none;
+            padding: 10px 20px;
+            cursor: pointer;
+            font-size: 14px;
+            margin: 10px 5px;
+        }
+        button:hover { background: #1177bb; }
+        pre {
+            background: #1e1e1e;
+            padding: 15px;
+            overflow-x: auto;
+            border: 1px solid #3e3e3e;
+        }
+        .error {
+            background: #5a1d1d;
+            color: #f48771;
+            padding: 15px;
+            border-left: 4px solid #f48771;
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1>🔬 PM Data Raw Analysis - August 2026</h1>
+        
+        <div class="summary">
+            <h3>Test Configuration</h3>
+            <p>This page directly queries Supabase to check PM log data for August 2026</p>
+            <p><strong>Note:</strong> Update SUPABASE_URL and SUPABASE_ANON_KEY below before running</p>
+        </div>
+
+        <button onclick="runTest()">🚀 Run Test</button>
+        <button onclick="clearResults()">🗑️ Clear</button>
+
+        <div id="results"></div>
+    </div>
+
+    <script>
+        // ⚠️ UPDATE THESE FROM YOUR .env FILE
+        const SUPABASE_URL = 'YOUR_SUPABASE_URL_HERE'
+        const SUPABASE_ANON_KEY = 'YOUR_SUPABASE_ANON_KEY_HERE'
+
+        let supabase
+
+        async function runTest() {
+            const resultsDiv = document.getElementById('results')
+            resultsDiv.innerHTML = '<h2>🔄 Loading...</h2>'
+
+            try {
+                // Initialize Supabase
+                supabase = window.supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY)
+                
+                // Test 1: Get ALL PM logs
+                const { data: allPMLogs, error: error1 } = await supabase
+                    .from('logaktivitas')
+                    .select('*')
+                    .eq('jenis', 'PM')
+                    .order('execute_date', { ascending: true })
+
+                if (error1) throw error1
+
+                // Test 2: Get PM logs for August 2026 (using SQL filter)
+                const { data: augustPMLogs, error: error2 } = await supabase
+                    .from('logaktivitas')
+                    .select('*')
+                    .eq('jenis', 'PM')
+                    .gte('execute_date', '2026-08-01')
+                    .lt('execute_date', '2026-09-01')
+                    .order('execute_date', { ascending: true })
+
+                if (error2) throw error2
+
+                // Analyze data
+                const analysis = analyzePMData(allPMLogs, augustPMLogs)
+                displayResults(analysis)
+
+            } catch (error) {
+                resultsDiv.innerHTML = `
+                    <div class="error">
+                        <h2>❌ Error</h2>
+                        <p>${error.message}</p>
+                        <pre>${JSON.stringify(error, null, 2)}</pre>
+                    </div>
+                `
+            }
+        }
+
+        function analyzePMData(allLogs, augustLogs) {
+            // Manual filter check
+            const manualAugustCheck = allLogs.filter(log => {
+                try {
+                    const date = new Date(log.execute_date)
+                    return date.getMonth() === 7 && date.getFullYear() === 2026
+                } catch {
+                    return false
+                }
+            })
+
+            // Date format analysis
+            const dateFormats = {}
+            augustLogs.forEach(log => {
+                const dateStr = String(log.execute_date)
+                const format = dateStr.substring(0, 10) // First 10 chars
+                dateFormats[format] = (dateFormats[format] || 0) + 1
+            })
+
+            return {
+                totalPMLogs: allLogs.length,
+                augustLogsSQLFilter: augustLogs.length,
+                augustLogsManualFilter: manualAugustCheck.length,
+                dateFormats: dateFormats,
+                sampleAugustLogs: augustLogs.slice(0, 20),
+                sampleAllLogs: allLogs.slice(0, 10)
+            }
+        }
+
+        function displayResults(analysis) {
+            const resultsDiv = document.getElementById('results')
+            
+            let html = `
+                <h2>📊 Analysis Results</h2>
+                
+                <div class="summary">
+                    <h3>Summary</h3>
+                    <p><strong>Total PM Logs:</strong> ${analysis.totalPMLogs}</p>
+                    <p><strong>August 2026 (SQL Filter):</strong> ${analysis.augustLogsSQLFilter}</p>
+                    <p><strong>August 2026 (JS Filter):</strong> ${analysis.augustLogsManualFilter}</p>
+                    <p><strong>Match Status:</strong> ${analysis.augustLogsSQLFilter === analysis.augustLogsManualFilter ? '✅ MATCH' : '❌ MISMATCH'}</p>
+                </div>
+
+                <h2>📅 Date Formats Found</h2>
+                <pre>${JSON.stringify(analysis.dateFormats, null, 2)}</pre>
+
+                <h2>🔍 Sample August 2026 Logs (First 20)</h2>
+            `
+
+            analysis.sampleAugustLogs.forEach((log, idx) => {
+                const dateStr = String(log.execute_date)
+                const includesTest = dateStr.includes('2026-08')
+                const parseTest = new Date(log.execute_date).getMonth() === 7
+
+                html += `
+                    <div class="log-entry ${includesTest || parseTest ? 'match' : 'nomatch'}">
+                        <strong>#${idx + 1} - Log ${log.no}</strong> | no_id: ${log.no_id}<br>
+                        execute_date: <code>${log.execute_date}</code><br>
+                        String: "${dateStr}" (length: ${dateStr.length})<br>
+                        Test includes('2026-08'): ${includesTest ? '✅' : '❌'}<br>
+                        Test Date.getMonth()===7: ${parseTest ? '✅' : '❌'}
+                    </div>
+                `
+            })
+
+            html += `
+                <h2>📦 Sample All PM Logs (First 10)</h2>
+            `
+
+            analysis.sampleAllLogs.forEach((log, idx) => {
+                html += `
+                    <div class="log-entry">
+                        <strong>#${idx + 1} - Log ${log.no}</strong> | no_id: ${log.no_id}<br>
+                        execute_date: <code>${log.execute_date}</code><br>
+                        Month: ${new Date(log.execute_date).getMonth()}, Year: ${new Date(log.execute_date).getFullYear()}
+                    </div>
+                `
+            })
+
+            resultsDiv.innerHTML = html
+        }
+
+        function clearResults() {
+            document.getElementById('results').innerHTML = ''
+        }
+    </script>
+</body>
+</html>
