@@ -3,11 +3,20 @@ import { supabase, handleSupabaseError } from '@/config/supabase'
 
 /**
  * Helper: Determine if a period is in the past
+ * ✅ ENHANCED: With detailed logging for debugging
  */
 function isPastPeriod(month, year) {
   const now = new Date()
-  const selectedDate = new Date(year, month + 1, 0)
-  return selectedDate < new Date(now.getFullYear(), now.getMonth(), 1)
+  const currentMonth = now.getMonth() // 0-11
+  const currentYear = now.getFullYear()
+  
+  // ✅ FIX: Simplified logic - compare month/year directly
+  const isPast = (year < currentYear) || (year === currentYear && month < currentMonth)
+  
+  console.log(`[isPastPeriod] Checking: month=${month}, year=${year}, current=${currentMonth}/${currentYear}`)
+  console.log(`  -> ${isPast ? 'Past' : 'Current/Future'} (month ${month} ${month < currentMonth ? '<' : '>='} ${currentMonth})`)
+  
+  return isPast
 }
 
 /**
@@ -181,7 +190,8 @@ export const logAktivitasApi = {
     }
   },
   /**
-   * GET: Total Schedules (untuk dashboard) - VERSI FINAL FIX dengan Versioning
+   * GET: Total Schedules (untuk dashboard) - OPTIMIZED VERSION (No Versioning)
+   * Fetch data ONCE and reuse for all 12 months instead of 36 queries
    */
   async getTotalSchedules(year = new Date().getFullYear()) {
     try {
@@ -189,33 +199,137 @@ export const logAktivitasApi = {
 
       const months = ['January', 'February', 'March', 'April', 'May', 'June', 'July', 'August', 'September', 'October', 'November', 'December']
 
-      // ✅ VERSIONING: Get appropriate version for each month
-      const versionPromises = months.map((_, index) => this.getVersionForPeriod(index, parseInt(year)))
-      const monthVersions = await Promise.all(versionPromises)
+      // ✅ CRITICAL FIX V2: Manual pagination to fetch ALL data
+      // Supabase .range() might not work, so we implement proper pagination
+      
+      const fetchAllRows = async (tableName) => {
+        const pageSize = 1000
+        let allData = []
+        let page = 0
+        let hasMore = true
+        
+        while (hasMore) {
+          const start = page * pageSize
+          const end = start + pageSize - 1
+          
+          const { data, error } = await supabase
+            .from(tableName)
+            .select('*')
+            .range(start, end)
+          
+          if (error) throw error
+          
+          if (data && data.length > 0) {
+            allData = [...allData, ...data]
+            console.log(`[Fetch] ${tableName}: page ${page + 1}, fetched ${data.length} rows, total so far: ${allData.length}`)
+            
+            if (data.length < pageSize) {
+              hasMore = false // Last page
+            } else {
+              page++
+            }
+          } else {
+            hasMore = false
+          }
+        }
+        
+        console.log(`[Fetch] ${tableName}: COMPLETE - ${allData.length} total rows`)
+        return allData
+      }
+      
+      // Fetch all data with pagination
+      const [kalibrasiData, alatData, allLogData] = await Promise.all([
+        fetchAllRows('kalibrasi'),
+        fetchAllRows('daftaralat'),
+        fetchAllRows('logaktivitas')
+      ])
 
-      console.log('[API] Month versions:', monthVersions)
-
-      // ✅ Fetch data with versioning - each month uses its appropriate version
-      const fetchPromises = months.map((_, index) => {
-        const versionId = monthVersions[index]
-        return Promise.all([
-          this.getDataForVersion('kalibrasi', versionId),
-          this.getDataForVersion('daftaralat', versionId),
-          this.getDataForVersion('logaktivitas', versionId)
-        ])
+      console.log('[API] Data fetched:', { 
+        kalibrasi: kalibrasiData.length, 
+        alat: alatData.length, 
+        logs: allLogData.length,
+        timestamp: new Date().toISOString(),
+        codeVersion: 'v3.0-SUPABASE-LIMIT-FIX',  // ← Critical fix version
+        // ✅ PM specific check
+        pmLogs: allLogData.filter(l => l.jenis === 'PM').length,
+        pmLogsAugust2026: allLogData.filter(l => {
+          if (l.jenis !== 'PM') return false
+          try {
+            const d = new Date(l.execute_date)
+            return d.getMonth() === 7 && d.getFullYear() === 2026
+          } catch {
+            return false
+          }
+        }).length,
+        // Sample 5 PM logs
+        sample5PM: allLogData.filter(l => l.jenis === 'PM').slice(0, 5).map(l => ({
+          no: l.no,
+          execute_date: l.execute_date,
+          date_as_string: String(l.execute_date),
+          parsed_month: new Date(l.execute_date).getMonth(),
+          parsed_year: new Date(l.execute_date).getFullYear()
+        }))
       })
 
-      const allData = await Promise.all(fetchPromises)
-
-      // Process each month with its versioned data
+      // ✅ Process each month using the SAME fetched data (reuse, not refetch)
       const kalibrasiMonthly = months.map((month, index) => {
-        const [kalibrasiData, alatData, allLogData] = allData[index]
         return this.processMonthlyData(month, index, parseInt(year), kalibrasiData, alatData, allLogData)
       })
 
       const pmMonthly = months.map((month, index) => {
-        const [kalibrasiData, alatData, allLogData] = allData[index]
         return this.processPMMonthlyData(month, index, parseInt(year), alatData, allLogData)
+      })
+
+      // ✅ DEBUG: August-specific logging
+      const augustKal = kalibrasiMonthly.find(m => m.month === 'August')
+      const augustPM = pmMonthly.find(m => m.month === 'August')
+      
+      console.log('[API] August Kalibrasi Debug:', {
+        totalScheduled: kalibrasiData.length,
+        totalLogsAllMonths: allLogData.filter(l => l.jenis === 'Kalibrasi').length,
+        logsInAugust: allLogData.filter(l => {
+          if (l.jenis !== 'Kalibrasi' || !l.execute_date) return false
+          const dateStr = String(l.execute_date)
+          return dateStr.includes('2026-08') || (new Date(l.execute_date).getMonth() === 7 && new Date(l.execute_date).getFullYear() === 2026)
+        }).length,
+        executed: augustKal?.executed || 0,
+        count: augustKal?.count || 0,
+        percentage: augustKal?.executedPercentage || 0
+      })
+
+      // ✅ TEMPORARY WORKAROUND: Count ALL PM logs that have execute_date in 2026
+      // This will help us understand if the issue is date filtering or data issue
+      const allPM2026 = (allLogData || []).filter(l => {
+        if (l.jenis !== 'PM' || !l.execute_date) return false
+        try {
+          const dateStr = String(l.execute_date)
+          return dateStr.includes('2026') || new Date(l.execute_date).getFullYear() === 2026
+        } catch {
+          return false
+        }
+      })
+
+      console.log('[API] August PM Debug:', {
+        totalAlatWithPM: alatData.filter(a => a.pm_yn === 'Y').length,
+        totalPMLogsAllMonths: allLogData.filter(l => l.jenis === 'PM').length,
+        totalPM2026: allPM2026.length,  // ← ALL 2026 PM logs
+        logsInAugust: allLogData.filter(l => {
+          if (l.jenis !== 'PM' || !l.execute_date) return false
+          const dateStr = String(l.execute_date)
+          return dateStr.includes('2026-08') || (new Date(l.execute_date).getMonth() === 7 && new Date(l.execute_date).getFullYear() === 2026)
+        }).length,
+        executed: augustPM?.executed || 0,
+        count: augustPM?.count || 0,
+        percentage: augustPM?.executedPercentage || 0,
+        fullAugustPMData: augustPM,
+        // ✅ SAMPLE: First 10 PM logs from 2026
+        samplePM2026: allPM2026.slice(0, 10).map(l => ({
+          no: l.no,
+          execute_date: l.execute_date,
+          dateStr: String(l.execute_date),
+          month: new Date(l.execute_date).getMonth(),
+          is_august: new Date(l.execute_date).getMonth() === 7
+        }))
       })
 
       const result = {
@@ -226,7 +340,13 @@ export const logAktivitasApi = {
         pmMonthly
       }
 
-      console.log('[API] getTotalSchedules result:', result)
+      console.log('[API] getTotalSchedules summary:', {
+        totalKalibrasi: result.totalKalibrasi,
+        totalPM: result.totalPM,
+        augustKal: { executed: augustKal?.executed, count: augustKal?.count, pct: augustKal?.executedPercentage },
+        augustPM: { executed: augustPM?.executed, count: augustPM?.count, pct: augustPM?.executedPercentage }
+      })
+
       return result
 
     } catch (error) {
@@ -240,48 +360,6 @@ export const logAktivitasApi = {
         error: error.message
       }
     }
-  },
-
-  // ✅ Helper: Get version for specific period
-  async getVersionForPeriod(month, year) {
-    const targetDate = new Date(year, month)
-    const now = new Date()
-
-    // If target period is in the past, find the version that was active at end of that month
-    if (targetDate < new Date(now.getFullYear(), now.getMonth(), 1)) {
-      const periodEnd = new Date(year, month + 1, 0) // Last day of target month
-
-      try {
-        const { data, error } = await supabase
-          .from('data_versions')
-          .select('*')
-          .lte('snapshot_date', periodEnd)
-          .order('snapshot_date', { ascending: false })
-          .limit(1)
-
-        if (error) throw error
-        return data?.[0]?.version_id || null
-      } catch (error) {
-        console.warn('[Log Aktivitas API] getVersionForPeriod failed, using latest version:', error.message)
-        return null
-      }
-    }
-
-    // For current month, use latest version (null = latest)
-    return null
-  },
-
-  // ✅ Helper: Get data for specific version
-  async getDataForVersion(table, versionId = null) {
-    let query = supabase.from(table).select('*')
-
-    if (versionId) {
-      query = query.eq('version_id', versionId)
-    }
-
-    const { data, error } = await query
-    if (error) throw error
-    return data || []
   },
 
   // ✅ Helper: Process monthly kalibrasi data
@@ -330,22 +408,66 @@ export const logAktivitasApi = {
       return yearsDiff > 0 && yearsDiff % intervalYears === 0
     })
 
-    // ✅ FIX: executed hanya hitung log yang calibration_id-nya ada di validItems
-    const executed = (allLogData || []).filter(item => {
+    // ✅ Hitung SEMUA log aktivitas kalibrasi di bulan ini
+    // FIX: Use string matching as primary method, Date parsing as fallback
+    const monthNum = String(index + 1).padStart(2, '0') // '08' for August
+    const yearStr = String(year) // '2026'
+    
+    const allKalibrasiLogsThisMonth = (allLogData || []).filter(item => {
       if (item.jenis !== 'Kalibrasi' || !item.execute_date) return false
       try {
+        const dateStr = String(item.execute_date)
+        
+        // Method 1: String matching for YYYY-MM-DD format (most reliable)
+        if (dateStr.includes(`${yearStr}-${monthNum}`)) {
+          return true
+        }
+        
+        // Method 2: Date parsing fallback for other formats
         const executeDate = new Date(item.execute_date)
-        if (executeDate.getMonth() !== index || executeDate.getFullYear() !== year) return false
-
-        // ✅ Hanya hitung jika calibration_id match dengan validItems
-        return validItems.some(v => v.calibration_id === item.calibration_id || v.no_id === item.no_id)
+        if (!isNaN(executeDate.getTime())) {
+          return executeDate.getMonth() === index && executeDate.getFullYear() === year
+        }
+        
+        return false
       } catch (e) {
         return false
       }
-    }).length
+    })
+    
+    const executed = allKalibrasiLogsThisMonth.length
 
+    // ✅ LOGIC UNTUK COUNT:
+    // - Jika bulan sudah lewat (past period): count = executed (show REAL activity)
+    // - Jika bulan ini atau masa depan: count = validItems (show SCHEDULED activity)
     const count = isPast ? executed : validItems.length
     const executedPercentage = count > 0 ? Math.min(100, Math.round((executed / count) * 100)) : 0
+
+    // ✅ DEBUG: Detailed logging untuk August
+    if (month === 'August') {
+      console.log(`[processMonthlyData] August Kalibrasi Details:`, {
+        monthShort,
+        index,
+        year,
+        isPast,
+        validItemsCount: validItems.length,
+        totalLogsThisMonth: allKalibrasiLogsThisMonth.length,
+        executed,
+        count,  // ← This is the KEY value!
+        executedPercentage,
+        logic: isPast ? 'count=executed (PAST)' : 'count=validItems (CURRENT/FUTURE)',
+        sampleSchedule: validItems.slice(0, 3).map(v => ({
+          no_id: v.no_id,
+          cal_id: v.calibration_id,
+          due: v.due_date
+        })),
+        sampleLogs: allKalibrasiLogsThisMonth.slice(0, 3).map(l => ({
+          no_id: l.no_id,
+          cal_id: l.calibration_id,
+          date: l.execute_date
+        }))
+      })
+    }
 
     return { month, count, executed, executedPercentage }
   },
@@ -368,22 +490,201 @@ export const logAktivitasApi = {
       return false
     })
 
-    // ✅ FIX: Hitung executed HANYA untuk equipment yang ada di monthData
-    const executed = (allLogData || []).filter(item => {
-      if (item.jenis !== 'PM' || !item.execute_date) return false
-      try {
-        const executeDate = new Date(item.execute_date)
-        if (executeDate.getMonth() !== index || executeDate.getFullYear() !== year) return false
-
-        // ✅ Hanya hitung jika no_id ada di monthData (equipment yang dijadwalkan)
-        return monthData.some(eq => eq.no_id === item.no_id)
-      } catch (e) {
+    // ✅ FIX CRITICAL: Hitung SEMUA log aktivitas PM di bulan ini
+    // Multiple fallback methods to catch ALL date formats
+    const monthNum = String(index + 1).padStart(2, '0') // '08' for August
+    const yearStr = String(year) // '2026'
+    
+    const allPMLogsThisMonth = (allLogData || []).filter(item => {
+      if (item.jenis !== 'PM') return false
+      if (!item.execute_date) {
+        console.warn('[PM Filter] Missing execute_date for log:', item.no)
         return false
       }
-    }).length
+      
+      try {
+        const dateStr = String(item.execute_date).trim()
+        
+        // ✅ ULTRA-AGGRESSIVE MATCHING - Try EVERYTHING
+        
+        // Test 1: Direct string includes (most common)
+        if (dateStr.includes(`${yearStr}-${monthNum}`)) {
+          return true
+        }
+        
+        // Test 2: Alternative separators
+        if (dateStr.includes(`${yearStr}/${monthNum}`) || 
+            dateStr.includes(`${yearStr}.${monthNum}`)) {
+          return true
+        }
+        
+        // Test 3: Regex pattern
+        const dateRegex = new RegExp(`${yearStr}[-/.\\s]${monthNum}[-/.\\s]`)
+        if (dateRegex.test(dateStr)) {
+          return true
+        }
+        
+        // Test 4: Reverse order check (DD-MM-YYYY or MM-DD-YYYY)
+        if (dateStr.includes(`${monthNum}-${yearStr}`) || 
+            dateStr.includes(`${monthNum}/${yearStr}`)) {
+          return true
+        }
+        
+        // Test 5: Date object parsing (last resort)
+        try {
+          const executeDate = new Date(item.execute_date)
+          if (!isNaN(executeDate.getTime())) {
+            const parsedMonth = executeDate.getMonth()  // 0-11
+            const parsedYear = executeDate.getFullYear()
+            
+            if (parsedMonth === index && parsedYear === year) {
+              return true
+            }
+          }
+        } catch (dateError) {
+          console.warn('[PM Filter] Date parse failed:', item.no, item.execute_date)
+        }
+        
+        return false
+      } catch (e) {
+        console.error('[PM Filter] Unexpected error:', e, item)
+        return false
+      }
+    })
+    
+    const executed = allPMLogsThisMonth.length
+    
+    // ✅ CRITICAL DEBUG: Manual check EVERY single PM log for August
+    if (month === 'August') {
+      const allPMLogs = (allLogData || []).filter(l => l.jenis === 'PM')
+      
+      console.log('='.repeat(80))
+      console.log('[PM DEEP DEBUG] Analyzing ALL PM logs...')
+      console.log('='.repeat(80))
+      
+      // Check each PM log individually
+      const augustPMManualCheck = allPMLogs.map((log, idx) => {
+        const dateStr = String(log.execute_date || '').trim()
+        let dateObj
+        try {
+          dateObj = new Date(log.execute_date)
+        } catch (e) {
+          dateObj = null
+        }
+        
+        const checks = {
+          no: log.no,
+          no_id: log.no_id,
+          execute_date_raw: log.execute_date,
+          execute_date_string: dateStr,
+          string_length: dateStr.length,
+          // Test all possible matches
+          test_includes_2026_08: dateStr.includes('2026-08'),
+          test_includes_08_2026: dateStr.includes('08-2026'),
+          test_includes_082026: dateStr.includes('082026'),
+          test_startswith_2026: dateStr.startsWith('2026'),
+          test_date_parse_month: dateObj ? dateObj.getMonth() : 'PARSE_FAIL',
+          test_date_parse_year: dateObj ? dateObj.getFullYear() : 'PARSE_FAIL',
+          is_august_2026: (dateObj && dateObj.getMonth() === 7 && dateObj.getFullYear() === 2026),
+          // Final verdict
+          would_match: dateStr.includes('2026-08') || (dateObj && dateObj.getMonth() === 7 && dateObj.getFullYear() === 2026)
+        }
+        
+        // Only log first 20 for readability
+        if (idx < 20) {
+          console.log(`PM Log #${idx + 1}:`, checks)
+        }
+        
+        return checks
+      })
+      
+      const augustMatches = augustPMManualCheck.filter(c => c.is_august_2026)
+      const totalPM = allPMLogs.length
+      
+      console.log('='.repeat(80))
+      console.log(`[PM SUMMARY] Total PM logs in dataset: ${totalPM}`)
+      console.log(`[PM SUMMARY] PM logs that are August 2026: ${augustMatches.length}`)
+      console.log(`[PM SUMMARY] PM logs detected by filter: ${allPMLogsThisMonth.length}`)
+      console.log(`[PM SUMMARY] MISSING: ${augustMatches.length - allPMLogsThisMonth.length}`)
+      console.log('='.repeat(80))
+      
+      if (augustMatches.length > allPMLogsThisMonth.length) {
+        const missing = augustMatches.filter(m => 
+          !allPMLogsThisMonth.some(detected => detected.no === m.no)
+        )
+        console.error('[PM CRITICAL] Missing PM logs:')
+        missing.slice(0, 10).forEach(m => {
+          console.error('  Missing:', m)
+        })
+      }
+    }
 
+    // ✅ DEBUG: Detailed logging untuk August
+    if (month === 'August') {
+      // Sample 10 PM logs dari semua data untuk check format
+      const allPMLogs = (allLogData || []).filter(l => l.jenis === 'PM')
+      
+      // Test date filtering untuk semua PM logs
+      const testResults = allPMLogs.slice(0, 20).map(l => {
+        const dateStr = String(l.execute_date)
+        const monthNum = '08'
+        const yearStr = '2026'
+        
+        return {
+          no: l.no,
+          execute_date: l.execute_date,
+          dateStr: dateStr,
+          // Test 1: Simple includes
+          test1_includes: dateStr.includes(`${yearStr}-${monthNum}`),
+          // Test 2: Regex
+          test2_regex: new RegExp(`${yearStr}[-/]${monthNum}[-/]`).test(dateStr),
+          // Test 3: Date parse
+          test3_month: new Date(l.execute_date).getMonth(),
+          test3_year: new Date(l.execute_date).getFullYear(),
+          test3_match: new Date(l.execute_date).getMonth() === 7 && new Date(l.execute_date).getFullYear() === 2026
+        }
+      })
+
+      console.log(`[processPMMonthlyData] August PM Details:`, {
+        monthShort,
+        index,
+        year,
+        isPast: isPastPeriodCheck,
+        totalAlatWithPM: alatData?.filter(d => d.pm_yn === 'Y')?.length || 0,
+        scheduledThisMonth: monthData.length,
+        totalPMLogsAllData: allPMLogs.length,
+        totalLogsThisMonth: allPMLogsThisMonth.length,
+        executed,
+        testResults,  // ← Detailed test results
+        sampleSchedule: monthData.slice(0, 3).map(eq => ({
+          no_id: eq.no_id,
+          pm_yn: eq.pm_yn,
+          '6_monthly': eq['6_monthly'],
+          yearly: eq.yearly
+        })),
+        sampleFilteredLogs: allPMLogsThisMonth.slice(0, 10).map(l => ({
+          no: l.no,
+          no_id: l.no_id,
+          date: l.execute_date
+        }))
+      })
+    }
+
+    // ✅ LOGIC UNTUK COUNT (sama seperti Kalibrasi):
+    // - Jika bulan sudah lewat (past): count = executed (tampilkan aktivitas REAL)
+    // - Jika bulan sekarang/future: count = monthData.length (tampilkan JADWAL)
     const count = isPastPeriodCheck ? executed : monthData.length
     const executedPercentage = count > 0 ? Math.min(100, Math.round((executed / count) * 100)) : 0
+
+    // ✅ DEBUG: Final calculation for August
+    if (month === 'August') {
+      console.log(`[processPMMonthlyData] August FINAL:`, {
+        count,
+        executed,
+        executedPercentage,
+        logic: isPastPeriodCheck ? 'count=executed (PAST)' : 'count=monthData (CURRENT/FUTURE)'
+      })
+    }
 
     return {
       month,
