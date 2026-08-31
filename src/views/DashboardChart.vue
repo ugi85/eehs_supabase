@@ -196,7 +196,7 @@
                         <span class="badge badge-success">{{ item.count || 0 }}</span>
                       </td>
                       <td class="text-center">
-                        <span class="badge" :class="item.executed === item.count && item.count > 0 ? 'badge-success' : 'badge-warning'">
+                        <span class="badge" :class="item.executedPercentage >= 100 && item.count > 0 ? 'badge-success' : 'badge-warning'">
                           {{ item.executed || 0 }}/{{ item.count || 0 }}
                         </span>
                       </td>
@@ -204,8 +204,8 @@
                         <div class="progress progress-xs mb-2">
                           <div 
                             class="progress-bar" 
-                            :class="item.executedPercentage === 100 && item.count > 0 ? 'bg-success' : 'bg-info'"
-                            :style="{ width: (item.executedPercentage || 0) + '%' }"
+                            :class="item.executedPercentage >= 100 && item.count > 0 ? 'bg-success' : 'bg-info'"
+                            :style="{ width: Math.min(100, item.executedPercentage || 0) + '%' }"
                           >
                           </div>
                         </div>
@@ -243,7 +243,7 @@
                         <span class="badge badge-warning">{{ item.count || 0 }}</span>
                       </td>
                       <td class="text-center">
-                        <span class="badge" :class="item.executed === item.count && item.count > 0 ? 'badge-success' : 'badge-warning'">
+                        <span class="badge" :class="item.executedPercentage >= 100 && item.count > 0 ? 'badge-success' : 'badge-warning'">
                           {{ item.executed || 0 }}/{{ item.count || 0 }}
                         </span>
                       </td>
@@ -251,8 +251,8 @@
                         <div class="progress progress-xs mb-2">
                           <div 
                             class="progress-bar" 
-                            :class="item.executedPercentage === 100 && item.count > 0 ? 'bg-success' : 'bg-warning'"
-                            :style="{ width: (item.executedPercentage || 0) + '%' }"
+                            :class="item.executedPercentage >= 100 && item.count > 0 ? 'bg-success' : 'bg-warning'"
+                            :style="{ width: Math.min(100, item.executedPercentage || 0) + '%' }"
                           >
                           </div>
                         </div>
