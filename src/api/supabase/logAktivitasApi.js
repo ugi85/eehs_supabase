@@ -440,7 +440,9 @@ export const logAktivitasApi = {
     // ✅ LOGIC UNTUK COUNT:
     // - Jika bulan sudah lewat (past period): count = executed (show REAL activity)
     // - Jika bulan ini atau masa depan: count = validItems (show SCHEDULED activity)
-    const count = isPast ? executed : validItems.length
+    // - SAFETY: count tidak boleh lebih kecil dari executed (untuk menghindari over 100%)
+    let count = isPast ? executed : validItems.length
+    count = Math.max(count, executed) // ✅ FIX: Pastikan count >= executed
     const executedPercentage = count > 0 ? Math.min(100, Math.round((executed / count) * 100)) : 0
 
     // ✅ DEBUG: Detailed logging untuk August
@@ -673,7 +675,9 @@ export const logAktivitasApi = {
     // ✅ LOGIC UNTUK COUNT (sama seperti Kalibrasi):
     // - Jika bulan sudah lewat (past): count = executed (tampilkan aktivitas REAL)
     // - Jika bulan sekarang/future: count = monthData.length (tampilkan JADWAL)
-    const count = isPastPeriodCheck ? executed : monthData.length
+    // - SAFETY: count tidak boleh lebih kecil dari executed (untuk menghindari over 100%)
+    let count = isPastPeriodCheck ? executed : monthData.length
+    count = Math.max(count, executed) // ✅ FIX: Pastikan count >= executed
     const executedPercentage = count > 0 ? Math.min(100, Math.round((executed / count) * 100)) : 0
 
     // ✅ DEBUG: Final calculation for August
