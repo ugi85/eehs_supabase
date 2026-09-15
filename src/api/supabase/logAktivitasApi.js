@@ -20,6 +20,64 @@ function isPastPeriod(month, year) {
 }
 
 /**
+ * ✅ NEW HELPER: Check if data is valid for a specific period
+ * Prevents newly imported data from appearing in past periods
+ * 
+ * @param {string|null} createdAt - ISO timestamp when data was created (e.g., '2026-09-15T10:30:00Z')
+ * @param {number} selectedYear - Selected year (e.g., 2026)
+ * @param {number} selectedMonthIndex - Selected month index 0-11 (0=Jan, 7=Aug, etc.)
+ * @returns {boolean} - True if data should be included in the period
+ * 
+ * Business Logic:
+ * - Data created_at = 2026-01-15, schedule = Aug 2026 → filter Aug 2026 → TRUE (data existed before Aug)
+ * - Data created_at = 2026-09-10, schedule = Aug 2026 → filter Aug 2026 → FALSE (data added AFTER Aug)
+ * - Data created_at = 2026-09-10, schedule = Sep 2026 → filter Sep 2026 → TRUE (data added in same month)
+ * - Data created_at = 2026-09-10, schedule = Oct 2026 → filter Oct 2026 → TRUE (data existed before Oct)
+ * - Data created_at = NULL (legacy data) → always TRUE (backward compatible)
+ */
+function isValidForPeriod(createdAt, selectedYear, selectedMonthIndex) {
+  // ✅ Handle legacy data without created_at (assume valid for all periods)
+  if (!createdAt) {
+    return true
+  }
+  
+  try {
+    // Parse created_at timestamp
+    const createdDate = new Date(createdAt)
+    
+    // Validate parsed date
+    if (isNaN(createdDate.getTime())) {
+      console.warn('[isValidForPeriod] Invalid createdAt date:', createdAt)
+      return true // If invalid, assume valid (fail-safe)
+    }
+    
+    // Calculate end of selected period
+    // Example: Aug 2026 (monthIndex=7) → 2026-08-31 23:59:59
+    const endOfSelectedMonth = new Date(selectedYear, selectedMonthIndex + 1, 0, 23, 59, 59, 999)
+    
+    // Data is valid if it was created BEFORE or DURING the selected period
+    const isValid = createdDate <= endOfSelectedMonth
+    
+    // Debug logging (can be removed in production)
+    if (!isValid) {
+      console.log(`[isValidForPeriod] Data excluded:`, {
+        createdAt,
+        createdDate: createdDate.toISOString(),
+        selectedPeriod: `${selectedYear}-${String(selectedMonthIndex + 1).padStart(2, '0')}`,
+        endOfPeriod: endOfSelectedMonth.toISOString(),
+        reason: 'Data created after selected period'
+      })
+    }
+    
+    return isValid
+    
+  } catch (error) {
+    console.error('[isValidForPeriod] Error parsing date:', error, { createdAt })
+    return true // If error, assume valid (fail-safe)
+  }
+}
+
+/**
  * Helper: Filter logs by exact month/year match
  */
 function filterLogsByMonth(logs, jenis, monthIndex, year) {
@@ -707,6 +765,19 @@ export const logAktivitasApi = {
       const { data: kalibrasiData, error: kalibrasiError } = await supabase.from('kalibrasi').select('*').order('no_id', { ascending: true })
       if (kalibrasiError) throw kalibrasiError
 
+      // ✅ Ensure we fetch created_at for filtering
+      console.log('[getKalibrasiForPeriod] Fetched kalibrasi data:', {
+        total: kalibrasiData?.length || 0,
+        month,
+        year,
+        sampleWithCreatedAt: kalibrasiData?.slice(0, 3).map(k => ({
+          no_id: k.no_id,
+          cal_id: k.calibration_id,
+          due_date: k.due_date,
+          created_at: k.created_at
+        }))
+      })
+
       // ✅ FIX: Fetch logData dulu sebelum filter
       const { data: logData, error: logError } = await supabase.from('logaktivitas').select('*').eq('jenis', 'Kalibrasi').gte('execute_date', `${year}-${monthNum}-01`).lte('execute_date', `${year}-${monthNum}-31`)
       if (logError) throw logError
@@ -749,6 +820,13 @@ export const logAktivitasApi = {
         if (alatStatusMap[item.no_id] === 'obsolete') return false
         if (!item.due_date) return false
         if (!item.due_date.toLowerCase().includes(monthShort)) return false
+
+        // ✅ NEW: Check if data was created before or during the selected period
+        // This prevents newly imported data from appearing in past periods
+        // Use kalibrasi.created_at (from kalibrasi table audit trail)
+        if (!isValidForPeriod(item.created_at, selectedYear_int, monthIndex)) {
+          return false
+        }
 
         const intervalMonths = parseIntervalMonths(item.int)
         if (intervalMonths <= 12) return true
@@ -827,19 +905,45 @@ export const logAktivitasApi = {
         .order('no_id', { ascending: true })
       if (alatError) throw alatError
 
+      // ✅ Ensure we fetch created_at for filtering
+      console.log('[getPMForPeriod] Fetched daftaralat data:', {
+        total: alatData?.length || 0,
+        month,
+        year,
+        sampleWithCreatedAt: alatData?.slice(0, 3).map(a => ({
+          no_id: a.no_id,
+          yearly: a.yearly,
+          '6_monthly': a['6_monthly'],
+          created_at: a.created_at
+        }))
+      })
+
       const now = new Date()
       const selectedDate = new Date(parseInt(year), monthIndex + 1, 0)
       const isPastPeriod = selectedDate < new Date(now.getFullYear(), now.getMonth(), 1)
       const monthShort = month.substring(0, 3).toLowerCase()
 
       const filtered = (alatData || []).filter(item => {
+        // Check if equipment has PM schedule for this month
+        let hasScheduleThisMonth = false
+        
         if (item['6_monthly'] && item['6_monthly'] !== 'NA' && item['6_monthly'] !== '-') {
-          if (item['6_monthly'].toLowerCase().includes(monthShort)) return true
+          if (item['6_monthly'].toLowerCase().includes(monthShort)) hasScheduleThisMonth = true
         }
         if (item.yearly && item.yearly !== 'NA' && item.yearly !== '-') {
-          if (item.yearly.toLowerCase().includes(monthShort)) return true
+          if (item.yearly.toLowerCase().includes(monthShort)) hasScheduleThisMonth = true
         }
-        return false
+        
+        if (!hasScheduleThisMonth) return false
+
+        // ✅ NEW: Check if data was created before or during the selected period
+        // This prevents newly imported equipment from appearing in past PM periods
+        // Use daftaralat.created_at (from daftaralat table audit trail)
+        if (!isValidForPeriod(item.created_at, parseInt(year), monthIndex)) {
+          return false
+        }
+
+        return true
       })
 
       const { data: logData, error: logError } = await supabase.from('logaktivitas').select('*').eq('jenis', 'PM').gte('execute_date', `${year}-${monthNum}-01`).lte('execute_date', `${year}-${monthNum}-31`)
