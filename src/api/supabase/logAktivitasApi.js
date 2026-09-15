@@ -390,9 +390,23 @@ export const logAktivitasApi = {
         }))
       })
 
+      // ✅ FIX: Calculate totalKalibrasi using unique calibration_ids
+      // This prevents both under-counting and over-counting
+      const statusMap = {}
+      ;(alatData || []).forEach(d => { statusMap[d.no_id] = d.status })
+
+      const uniqueKalibrasiIds = new Set()
+      ;(kalibrasiData || []).forEach(k => {
+        // Only count active equipment
+        if (statusMap[k.no_id] === 'obsolete') return
+        if (!k.calibration_id) return
+        uniqueKalibrasiIds.add(k.calibration_id)
+      })
+
       const result = {
         success: true,
-        totalKalibrasi: kalibrasiMonthly.reduce((sum, m) => sum + (m.count || 0), 0),
+        // ✅ Use unique count instead of sum to avoid double-counting
+        totalKalibrasi: uniqueKalibrasiIds.size,
         totalPM: pmMonthly.reduce((sum, m) => sum + (m.count || 0), 0),
         kalibrasiMonthly,
         pmMonthly
@@ -400,6 +414,8 @@ export const logAktivitasApi = {
 
       console.log('[API] getTotalSchedules summary:', {
         totalKalibrasi: result.totalKalibrasi,
+        totalKalibrasiFromSum: kalibrasiMonthly.reduce((sum, m) => sum + (m.count || 0), 0),
+        uniqueCalibrationIds: uniqueKalibrasiIds.size,
         totalPM: result.totalPM,
         augustKal: { executed: augustKal?.executed, count: augustKal?.count, pct: augustKal?.executedPercentage },
         augustPM: { executed: augustPM?.executed, count: augustPM?.count, pct: augustPM?.executedPercentage }
