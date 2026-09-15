@@ -89,8 +89,9 @@ export const daftarAlatApi = {
   /**
    * UPSERT BATCH: Import banyak baris sekaligus
    * mode: 'upsert' = tambah+update, 'insert_only' = hanya data baru saja
+   * userInfo: string identifier untuk audit trail (email, inisial, nama)
    */
-  async upsertBatch(tools, mode = 'upsert') {
+  async upsertBatch(tools, mode = 'upsert', userInfo = null) {
     const noIds = tools.map(t => t.no_id).filter(Boolean)
 
     // Ambil semua data existing sekaligus untuk diff comparison
@@ -147,7 +148,7 @@ export const daftarAlatApi = {
       nextNo = (maxRow?.no || 0) + 1
     }
 
-    const buildToolData = (tool, preserveStatus = false) => {
+    const buildToolData = (tool, preserveStatus = false, userInfo = null) => {
       const data = {
         no_id: tool.no_id,
         description: tool.description,
@@ -167,6 +168,11 @@ export const daftarAlatApi = {
         area: tool.area || null,
         location: tool.location
       }
+      // ✅ Set created_by/updated_by jika ada userInfo
+      if (userInfo) {
+        data.updated_by = userInfo
+        // created_by hanya untuk insert (akan di-set di insert query)
+      }
       // Hanya set status jika eksplisit ada nilainya dan bukan preserve mode
       // preserveStatus = true saat update via import (jangan overwrite status existing)
       if (!preserveStatus && tool.status) {
@@ -179,16 +185,19 @@ export const daftarAlatApi = {
       ...toUpdate.map(async (tool) => {
         const result = await supabase
           .from('daftaralat')
-          .update(buildToolData(tool, true))  // preserveStatus: jangan overwrite status existing
+          .update(buildToolData(tool, true, userInfo))  // preserveStatus: jangan overwrite status existing
           .eq('no', existingMap[tool.no_id].no)
           .select('no').single()
         if (result.error) throw new Error(result.error.message)
         return { action: 'updated', no_id: tool.no_id }
       }),
       ...toInsert.map(async (tool, i) => {
+        const insertData = { ...buildToolData(tool, false, userInfo), no: nextNo + i }
+        // ✅ Set created_by untuk data baru
+        if (userInfo) insertData.created_by = userInfo
         const result = await supabase
           .from('daftaralat')
-          .insert({ ...buildToolData(tool, false), no: nextNo + i })  // insert baru: status boleh di-set
+          .insert(insertData)  // insert baru: status boleh di-set
           .select('no').single()
         if (result.error) throw new Error(result.error.message)
         return { action: 'inserted', no_id: tool.no_id }

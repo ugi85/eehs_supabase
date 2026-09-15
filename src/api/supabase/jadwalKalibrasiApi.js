@@ -191,8 +191,9 @@ export const jadwalKalibrasiApi = {
   /**
    * UPSERT BATCH: Import banyak baris sekaligus
    * mode: 'upsert' = tambah+update, 'insert_only' = hanya data baru saja
+   * userInfo: string identifier untuk audit trail (email, inisial, nama)
    */
-  async upsertBatch(jadwals, mode = 'upsert') {
+  async upsertBatch(jadwals, mode = 'upsert', userInfo = null) {
     // ✅ VALIDASI: Semua no_id harus ada di daftaralat
     const noIdsToValidate = [...new Set(jadwals.map(j => j.no_id).filter(Boolean))]
     
@@ -299,18 +300,28 @@ export const jadwalKalibrasiApi = {
       if (skipped.length > 5) console.log(`  ... dan ${skipped.length - 5} lainnya`)
     }
 
-    const buildData = (jadwal) => ({
-      no_id: jadwal.no_id,
-      description: jadwal.description,
-      calibration_id: jadwal.cal_id,
-      parameter: jadwal.parameter,
-      process_range: jadwal.process_range,
-      reject_error_limit: jadwal.reject_error,
-      int: jadwal.interval,
-      due_date: jadwal.due_date,
-      remark: jadwal.remark,
-      criticality: jadwal.criticality
-    })
+    const buildData = (jadwal, isInsert = false) => {
+      const data = {
+        no_id: jadwal.no_id,
+        description: jadwal.description,
+        calibration_id: jadwal.cal_id,
+        parameter: jadwal.parameter,
+        process_range: jadwal.process_range,
+        reject_error_limit: jadwal.reject_error,
+        int: jadwal.interval,
+        due_date: jadwal.due_date,
+        remark: jadwal.remark,
+        criticality: jadwal.criticality
+      }
+      // ✅ Set audit trail info
+      if (userInfo) {
+        if (isInsert) {
+          data.created_by = userInfo
+        }
+        data.updated_by = userInfo
+      }
+      return data
+    }
 
     // Fetch MAX(no) untuk assign manual ke data baru (bypass sequence issue)
     let nextNo = 0
@@ -326,12 +337,12 @@ export const jadwalKalibrasiApi = {
 
     const results = await Promise.allSettled([
       ...toUpdate.map(async (jadwal) => {
-        const result = await supabase.from('kalibrasi').update(buildData(jadwal)).eq('no', existingMap[jadwal.cal_id].no).select().single()
+        const result = await supabase.from('kalibrasi').update(buildData(jadwal, false)).eq('no', existingMap[jadwal.cal_id].no).select().single()
         if (result.error) throw new Error(result.error.message)
         return { action: 'updated', no_id: jadwal.no_id }
       }),
       ...toInsert.map(async (jadwal, i) => {
-        const result = await supabase.from('kalibrasi').insert([{ ...buildData(jadwal), no: nextNo + i }]).select().single()
+        const result = await supabase.from('kalibrasi').insert([{ ...buildData(jadwal, true), no: nextNo + i }]).select().single()
         if (result.error) throw new Error(result.error.message)
         return { action: 'inserted', no_id: jadwal.no_id }
       })
