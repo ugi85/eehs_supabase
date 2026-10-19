@@ -22,6 +22,122 @@ const {
 
 const { config } = useFrontendConfig()
 
+// === FILTER STATE ===
+const isFilterExpanded = ref(false) // Default tertutup saat halaman dibuka
+const selectedMonth = ref('')
+const selectedInterval = ref('')
+const selectedRemark = ref('all') // 'all' | 'internal' | 'external'
+const selectedParameter = ref('')
+
+const toggleFilter = () => {
+  isFilterExpanded.value = !isFilterExpanded.value
+}
+
+// Daftar pilihan bulan
+const monthOptions = [
+  { value: 'January', label: 'Januari' },
+  { value: 'February', label: 'Februari' },
+  { value: 'March', label: 'Maret' },
+  { value: 'April', label: 'April' },
+  { value: 'May', label: 'Mei' },
+  { value: 'June', label: 'Juni' },
+  { value: 'July', label: 'Juli' },
+  { value: 'August', label: 'Agustus' },
+  { value: 'September', label: 'September' },
+  { value: 'October', label: 'Oktober' },
+  { value: 'November', label: 'November' },
+  { value: 'December', label: 'Desember' }
+]
+
+// Ekstrak daftar interval unik secara dinamis dari data
+const availableIntervals = computed(() => {
+  const set = new Set()
+  ;(refJadwal.value || []).forEach(j => {
+    if (j.interval && j.interval !== '-' && j.interval !== 'NA') {
+      set.add(String(j.interval).trim())
+    }
+  })
+  return Array.from(set).sort()
+})
+
+// Ekstrak daftar parameter unik secara dinamis dari data
+const availableParameters = computed(() => {
+  const set = new Set()
+  ;(refJadwal.value || []).forEach(j => {
+    if (j.parameter && j.parameter !== '-' && j.parameter !== 'NA') {
+      set.add(String(j.parameter).trim())
+    }
+  })
+  return Array.from(set).sort((a, b) => a.localeCompare(b))
+})
+
+// Helper untuk memeriksa apakah field due_date cocok dengan bulan target
+const matchMonthField = (fieldValue, targetMonth) => {
+  if (!fieldValue || fieldValue === 'NA' || fieldValue === '-') return false
+  const fieldStr = String(fieldValue).toLowerCase()
+  const mShort = targetMonth.substring(0, 3).toLowerCase()
+  const mFull = targetMonth.toLowerCase()
+  return fieldStr.includes(mShort) || fieldStr.includes(mFull)
+}
+
+// Data jadwal setelah difilter
+const filteredJadwal = computed(() => {
+  let list = refJadwal.value || []
+
+  // 1. Filter Bulan Jadwal (due_date)
+  if (selectedMonth.value) {
+    list = list.filter(j => matchMonthField(j.due_date, selectedMonth.value))
+  }
+
+  // 2. Filter Interval
+  if (selectedInterval.value) {
+    list = list.filter(j => String(j.interval || '').trim().toLowerCase() === selectedInterval.value.toLowerCase())
+  }
+
+  // 3. Filter Pelaksana (Remark)
+  if (selectedRemark.value === 'internal') {
+    list = list.filter(j => String(j.remark || '').toLowerCase().includes('internal'))
+  } else if (selectedRemark.value === 'external') {
+    list = list.filter(j => String(j.remark || '').toLowerCase().includes('external'))
+  }
+
+  // 4. Filter Parameter
+  if (selectedParameter.value) {
+    list = list.filter(j => String(j.parameter || '').trim().toLowerCase() === selectedParameter.value.toLowerCase())
+  }
+
+  return list
+})
+
+// Hitung berapa filter yang sedang aktif
+const activeFilterCount = computed(() => {
+  let count = 0
+  if (selectedMonth.value) count++
+  if (selectedInterval.value) count++
+  if (selectedRemark.value !== 'all') count++
+  if (selectedParameter.value) count++
+  return count
+})
+
+// Reset semua filter ke default
+const resetFilters = () => {
+  selectedMonth.value = ''
+  selectedInterval.value = ''
+  selectedRemark.value = 'all'
+  selectedParameter.value = ''
+}
+
+// Unique key untuk re-render tabel saat filter berubah
+const tableRenderKey = computed(() => {
+  return `${selectedMonth.value}_${selectedInterval.value}_${selectedRemark.value}_${selectedParameter.value}_${bulkDeleteMode.value}`
+})
+
+// Watch filter changes to reinitialize DataTables
+watch([selectedMonth, selectedInterval, selectedRemark, selectedParameter], async () => {
+  await nextTick()
+  await initDataTable()
+}, { flush: 'post' })
+
 const {
   importing,
   importErrors,
@@ -140,9 +256,9 @@ const confirmImport = async () => {
 // Print Jadwal Kalibrasi
 const handlePrint = () => {
   const now = new Date()
-  const month = now.toLocaleString('id-ID', { month: 'long' })
+  const month = selectedMonth.value || now.toLocaleString('id-ID', { month: 'long' })
   const year = now.getFullYear()
-  printService.printJadwalKalibrasi(refJadwal.value, month, year)
+  printService.printJadwalKalibrasi(filteredJadwal.value, month, year)
 }
 const permission = usePermissions()
 
@@ -183,16 +299,16 @@ const toggleJadwalSelection = (no) => {
 
 // ✅ Toggle select all
 const toggleSelectAll = () => {
-  if (selectedJadwal.value.length === refJadwal.value.length) {
+  if (selectedJadwal.value.length === filteredJadwal.value.length) {
     selectedJadwal.value = []
   } else {
-    selectedJadwal.value = refJadwal.value.map(jadwal => jadwal.no)
+    selectedJadwal.value = filteredJadwal.value.map(jadwal => jadwal.no)
   }
 }
 
 // ✅ Check if all selected
 const isAllSelected = computed(() => {
-  return refJadwal.value.length > 0 && selectedJadwal.value.length === refJadwal.value.length
+  return filteredJadwal.value.length > 0 && selectedJadwal.value.length === filteredJadwal.value.length
 })
 
 // ✅ Bulk delete handler
@@ -641,7 +757,7 @@ onMounted(async () => {
     <!-- Baris 2: Export/Import (hanya untuk admin) -->
     <div class="header-actions d-flex justify-content-end" v-if="isAdmin">
       <div class="btn-group btn-group-sm">
-        <button class="btn btn-outline-success" @click="exportJadwalKalibrasi(refJadwal)" title="Export ke Excel">
+        <button class="btn btn-outline-success" @click="exportJadwalKalibrasi(filteredJadwal)" title="Export ke Excel">
           <i class="fas fa-file-excel"></i><span class="btn-label-mobile ml-1">Export</span>
         </button>
         <button class="btn btn-outline-secondary" @click="downloadJadwalKalibrasiTemplate" title="Download template">
@@ -658,6 +774,112 @@ onMounted(async () => {
 
     <section class="content">
       <div class="container-fluid">
+
+        <!-- PANEL CARD FILTER -->
+        <div class="card card-outline card-info mb-3 filter-panel shadow-sm no-print" :class="{ 'collapsed-card': !isFilterExpanded }">
+          <div class="card-header py-2 d-flex justify-content-between align-items-center cursor-pointer" @click="toggleFilter" title="Klik untuk membuka / menutup filter">
+            <h3 class="card-title font-weight-bold d-flex align-items-center mb-0" style="font-size: 0.95rem;">
+              <i class="fas fa-filter text-info mr-2"></i>
+              <span>Filter Jadwal Kalibrasi</span>
+              <span v-if="activeFilterCount > 0" class="badge badge-info ml-2">
+                {{ activeFilterCount }} Filter Aktif
+              </span>
+              <span class="badge badge-light border ml-2 text-muted">
+                Menampilkan <strong>{{ filteredJadwal.length }}</strong> dari <strong>{{ refJadwal.length }}</strong> jadwal
+              </span>
+            </h3>
+            <div class="card-tools d-flex align-items-center" @click.stop>
+              <button 
+                v-if="activeFilterCount > 0" 
+                class="btn btn-xs btn-outline-danger mr-2" 
+                @click="resetFilters" 
+                title="Reset semua filter"
+              >
+                <i class="fas fa-undo mr-1"></i>Reset Filter
+              </button>
+              <button 
+                type="button" 
+                class="btn btn-tool" 
+                @click="toggleFilter"
+                :title="isFilterExpanded ? 'Tutup Filter' : 'Buka Filter'"
+              >
+                <i :class="isFilterExpanded ? 'fas fa-minus' : 'fas fa-plus'"></i>
+              </button>
+            </div>
+          </div>
+          <div v-show="isFilterExpanded" class="card-body py-3">
+            <div class="row">
+              <!-- 1. Filter Bulan Kalibrasi -->
+              <div class="col-lg-3 col-md-6 col-sm-12 mb-2">
+                <label class="form-label text-muted small font-weight-bold mb-1">
+                  <i class="fas fa-calendar-alt text-info mr-1"></i>Bulan Kalibrasi:
+                </label>
+                <select v-model="selectedMonth" class="form-control form-control-sm custom-select">
+                  <option value="">-- Semua Bulan --</option>
+                  <option v-for="m in monthOptions" :key="m.value" :value="m.value">
+                    {{ m.label }} ({{ m.value }})
+                  </option>
+                </select>
+              </div>
+
+              <!-- 2. Filter Interval -->
+              <div class="col-lg-3 col-md-6 col-sm-12 mb-2">
+                <label class="form-label text-muted small font-weight-bold mb-1">
+                  <i class="fas fa-history text-info mr-1"></i>Interval:
+                </label>
+                <select v-model="selectedInterval" class="form-control form-control-sm custom-select">
+                  <option value="">-- Semua Interval --</option>
+                  <option v-for="intVal in availableIntervals" :key="intVal" :value="intVal">
+                    {{ intVal }}
+                  </option>
+                </select>
+              </div>
+
+              <!-- 3. Filter Pelaksana (Remark) -->
+              <div class="col-lg-3 col-md-6 col-sm-12 mb-2">
+                <label class="form-label text-muted small font-weight-bold mb-1">
+                  <i class="fas fa-user-cog text-warning mr-1"></i>Pelaksana:
+                </label>
+                <select v-model="selectedRemark" class="form-control form-control-sm custom-select">
+                  <option value="all">Semua Pelaksana</option>
+                  <option value="internal">Internal Saja</option>
+                  <option value="external">External Saja</option>
+                </select>
+              </div>
+
+              <!-- 4. Filter Parameter -->
+              <div class="col-lg-3 col-md-6 col-sm-12 mb-2">
+                <label class="form-label text-muted small font-weight-bold mb-1">
+                  <i class="fas fa-ruler-combined text-success mr-1"></i>Parameter:
+                </label>
+                <select v-model="selectedParameter" class="form-control form-control-sm custom-select">
+                  <option value="">-- Semua Parameter --</option>
+                  <option v-for="param in availableParameters" :key="param" :value="param">
+                    {{ param }}
+                  </option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Chips / Tag Filter Aktif -->
+            <div v-if="activeFilterCount > 0" class="filter-chips d-flex align-items-center flex-wrap gap-2 mt-2 pt-2 border-top">
+              <small class="text-muted font-weight-bold mr-2"><i class="fas fa-tags mr-1"></i>Filter Aktif:</small>
+              <span v-if="selectedMonth" class="badge badge-info p-1 px-2 cursor-pointer" @click="selectedMonth = ''" title="Hapus filter bulan">
+                Bulan: {{ selectedMonth }} <i class="fas fa-times ml-1"></i>
+              </span>
+              <span v-if="selectedInterval" class="badge badge-primary p-1 px-2 cursor-pointer" @click="selectedInterval = ''" title="Hapus filter interval">
+                Interval: {{ selectedInterval }} <i class="fas fa-times ml-1"></i>
+              </span>
+              <span v-if="selectedRemark !== 'all'" class="badge badge-warning p-1 px-2 cursor-pointer" @click="selectedRemark = 'all'" title="Hapus filter pelaksana">
+                Pelaksana: {{ selectedRemark === 'internal' ? 'Internal' : 'External' }} <i class="fas fa-times ml-1"></i>
+              </span>
+              <span v-if="selectedParameter" class="badge badge-success p-1 px-2 cursor-pointer" @click="selectedParameter = ''" title="Hapus filter parameter">
+                Parameter: {{ selectedParameter }} <i class="fas fa-times ml-1"></i>
+              </span>
+            </div>
+          </div>
+        </div>
+
         <div class="card">
           <div class="card-body">
             <div v-if="loading" class="text-center py-4">
@@ -688,36 +910,38 @@ onMounted(async () => {
                   <i class="fas fa-trash mr-1"></i>Delete {{ selectedJadwal.length }} Jadwal
                 </button>
               </div>
-              <!-- ✅ Ubah class tabel -->
-              <table class="table table-bordered table-hover jadwal-kalibrasi-table">
-                <thead>
-                  <tr>
-                    <th class="align-middle checkbox-column" :style="bulkDeleteMode ? '' : 'width:0!important;min-width:0!important;max-width:0!important;padding:0!important;'">
-                      <input
-                        type="checkbox"
-                        :checked="isAllSelected"
-                        @click.stop="toggleSelectAll"
-                        class="cursor-pointer"
-                        :disabled="!bulkDeleteMode"
-                      />
-                    </th>
-                    <th>No</th>
-                    <th>No.ID</th>
-                    <th>Description</th>
-                    <th>Calibration ID</th>
-                    <th>Parameter</th>
-                    <th>Process Range</th>
-                    <th>Reject Error</th>                   
-                    <th>Interval</th>                   
-                    <th>Due Date</th>                   
-                    <th>Remark</th>                   
-                    <th>Criticality</th>
-                    <!-- ✅ Kolom Aksi -->
-                    <th class="text-center">Aksi</th>                   
-                  </tr>  
-                </thead>
-                <tbody>
-                    <tr v-for="(row, index) in refJadwal" :key="`jadwal-${row.no}`">
+
+              <!-- Wrapper dengan key agar DataTables diinisialisasi ulang bersih saat filter berubah -->
+              <div :key="tableRenderKey" class="table-responsive">
+                <table class="table table-bordered table-hover jadwal-kalibrasi-table">
+                  <thead>
+                    <tr>
+                      <th class="align-middle checkbox-column" :style="bulkDeleteMode ? '' : 'width:0!important;min-width:0!important;max-width:0!important;padding:0!important;'">
+                        <input
+                          type="checkbox"
+                          :checked="isAllSelected"
+                          @click.stop="toggleSelectAll"
+                          class="cursor-pointer"
+                          :disabled="!bulkDeleteMode"
+                        />
+                      </th>
+                      <th>No</th>
+                      <th>No.ID</th>
+                      <th>Description</th>
+                      <th>Calibration ID</th>
+                      <th>Parameter</th>
+                      <th>Process Range</th>
+                      <th>Reject Error</th>                   
+                      <th>Interval</th>                   
+                      <th>Due Date</th>                   
+                      <th>Remark</th>                   
+                      <th>Criticality</th>
+                      <!-- ✅ Kolom Aksi -->
+                      <th class="text-center">Aksi</th>                   
+                    </tr>  
+                  </thead>
+                  <tbody>
+                    <tr v-for="(row, index) in filteredJadwal" :key="`jadwal-${row.no}`">
                     <td class="text-center checkbox-column" :style="bulkDeleteMode ? '' : 'width:0!important;min-width:0!important;max-width:0!important;padding:0!important;'">
                       <input
                         type="checkbox"
@@ -768,7 +992,8 @@ onMounted(async () => {
           </div>
         </div>
       </div>
-    </section>
+    </div>
+  </section>
 
     <!-- Modal Import Excel -->
     <div
@@ -1204,5 +1429,47 @@ onMounted(async () => {
   .btn-group-sm > .btn {
     padding: 0.25rem 0.5rem;
   }
+}
+/* Filter Panel Styling */
+.filter-panel {
+  border-radius: 0.5rem;
+  border-top: 3px solid #17a2b8;
+}
+
+.filter-panel .card-header {
+  background-color: #f8fbfd;
+  border-bottom: 1px solid #e9f2f8;
+}
+
+.filter-panel .card-header.cursor-pointer {
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.15s ease;
+}
+
+.filter-panel .card-header.cursor-pointer:hover {
+  background-color: #f0f7fb;
+}
+
+.filter-panel .custom-select {
+  border-radius: 0.25rem;
+  font-size: 0.85rem;
+  border-color: #ced4da;
+}
+
+.filter-panel .custom-select:focus {
+  border-color: #17a2b8;
+  box-shadow: 0 0 0 0.2rem rgba(23, 162, 184, 0.25);
+}
+
+.filter-chips .badge {
+  font-size: 0.78rem;
+  font-weight: 500;
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+.filter-chips .badge:hover {
+  transform: scale(1.05);
+  opacity: 0.9;
 }
 </style>
