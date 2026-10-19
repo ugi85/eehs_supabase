@@ -484,7 +484,7 @@ onMounted(async () => {
 <section class="content-header">
   <div class="container-fluid">
     
-    <!-- Baris 1: Judul + Tombol Aksi (Print/Tambah) -->
+    <!-- Baris 1: Judul + Filter Status + Tombol Aksi (Print/Tambah) -->
     <div class="d-flex justify-content-between align-items-center mb-2 header-row">
       
       <!-- Kiri: Judul -->
@@ -493,12 +493,36 @@ onMounted(async () => {
         <small class="page-subtitle">No Reff: {{ documentRefEquipment }}</small>
       </div>
 
-      <!-- Kanan: Tombol Print (non-admin) atau Tambah + Print (admin) -->
-      <div class="d-flex align-items-center gap-2">
-        <!-- Print button: untuk non-admin -->
+      <!-- Kanan: Status Toggle (Aktif/Obsolete/Semua) + Print + Tambah -->
+      <div class="d-flex align-items-center flex-wrap gap-2">
+        <!-- Filter toggle status alat (Aktif, Obsolete, Semua) -->
+        <div class="btn-group btn-group-sm" role="group" aria-label="Status Alat">
+          <button
+            type="button"
+            class="btn"
+            :class="statusFilter === 'active' ? 'btn-success' : 'btn-outline-success'"
+            @click="setStatusFilter('active')"
+          >Aktif</button>
+          <button
+            type="button"
+            class="btn"
+            :class="statusFilter === 'obsolete' ? 'btn-secondary' : 'btn-outline-secondary'"
+            @click="setStatusFilter('obsolete')"
+          >Obsolete</button>
+          <button
+            type="button"
+            class="btn"
+            :class="statusFilter === 'all' ? 'btn-dark' : 'btn-outline-dark'"
+            @click="setStatusFilter('all')"
+          >Semua</button>
+        </div>
+
+        <!-- Pemisah visual / jarak pembeda group -->
+        <div class="header-divider d-none d-sm-block"></div>
+
+        <!-- Tombol Print (diberi jarak agar jadi pembeda group) -->
         <button 
-          v-if="!isAdmin" 
-          class="btn btn-outline-info btn-sm d-flex align-items-center" 
+          class="btn btn-outline-info btn-sm d-flex align-items-center ml-1" 
           @click="handlePrint" 
           title="Print daftar alat"
         >
@@ -507,49 +531,15 @@ onMounted(async () => {
         </button>
         
         <!-- Tombol Tambah: hanya admin -->
-        <button v-if="canCreate" class="btn btn-info btn-sm" @click="openCreateModal">
-          <i class="fas fa-plus mr-1"></i><span class="btn-label-mobile"> Tambah Alat</span>
-        </button>
-        
-        <!-- Print button: untuk admin (sejajar dengan Import) -->
-        <button 
-          v-if="isAdmin" 
-          class="btn btn-outline-info btn-sm d-flex align-items-center" 
-          @click="handlePrint" 
-          title="Print daftar alat"
-        >
-          <i class="fas fa-print"></i>
-          <span class="btn-label-mobile ml-1">Print</span>
+        <button v-if="canCreate" class="btn btn-info btn-sm d-flex align-items-center" @click="openCreateModal">
+          <i class="fas fa-plus mr-1"></i><span class="btn-label-mobile">Tambah Alat</span>
         </button>
       </div>
     </div>
 
-    <!-- Baris 2: Filter Status + Export/Import -->
-    <div class="header-actions d-flex justify-content-end align-items-center flex-wrap gap-2">
-      <!-- Filter toggle status alat (untuk semua pengguna) -->
-      <div class="btn-group btn-group-sm mr-2" role="group">
-        <button
-          type="button"
-          class="btn"
-          :class="statusFilter === 'active' ? 'btn-success' : 'btn-outline-success'"
-          @click="setStatusFilter('active')"
-        >Aktif</button>
-        <button
-          type="button"
-          class="btn"
-          :class="statusFilter === 'obsolete' ? 'btn-secondary' : 'btn-outline-secondary'"
-          @click="setStatusFilter('obsolete')"
-        >Obsolete</button>
-        <button
-          type="button"
-          class="btn"
-          :class="statusFilter === 'all' ? 'btn-dark' : 'btn-outline-dark'"
-          @click="setStatusFilter('all')"
-        >Semua</button>
-      </div>
-      
-      <!-- Export / Import (hanya admin) -->
-      <div class="btn-group btn-group-sm" v-if="isAdmin">
+    <!-- Baris 2: Export/Import (hanya untuk admin) -->
+    <div class="header-actions d-flex justify-content-end align-items-center flex-wrap gap-2" v-if="isAdmin">
+      <div class="btn-group btn-group-sm">
         <button class="btn btn-outline-success" @click="exportDaftarAlat(filteredTools)" title="Export ke Excel">
           <i class="fas fa-file-excel"></i><span class="btn-label-mobile ml-1">Export</span>
         </button>
@@ -1276,6 +1266,14 @@ onMounted(async () => {
 .btn-outline-info.btn-sm {
   min-width: auto;
   padding: 0.25rem 0.75rem;
+}
+
+/* Pemisah antar grup tombol di header */
+.header-divider {
+  width: 1px;
+  height: 22px;
+  background-color: #dee2e6;
+  margin: 0 0.5rem;
 }
 
 /* ✅ Responsive: tumpuk rapi di mobile */
