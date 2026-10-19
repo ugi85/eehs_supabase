@@ -3,7 +3,7 @@ import { ref, computed, onUnmounted, onMounted } from 'vue'
 import { logAktivitasApi } from '@/api'
 
 // === KONFIGURASI CACHE ===
-const CACHE_KEY = 'dashboard_data_cache'
+const CACHE_KEY = 'dashboard_data_cache_v3'
 const CACHE_DURATION = 30 * 60 * 1000 // 30 menit
 const DASHBOARD_REFRESH_EVENT = 'dashboard:needs-refresh'
 const DATA_VERSION_CREATED_EVENT = 'data-version-created'
@@ -89,6 +89,7 @@ export function useDashboard() {
   // ✅ FUNGSI: AMBIL DATA DARI CACHE
   const getFromCache = () => {
     try {
+      localStorage.removeItem('dashboard_data_cache') // Clean legacy cache
       const cached = localStorage.getItem(CACHE_KEY)
       if (!cached) return null
       

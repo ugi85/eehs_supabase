@@ -79,6 +79,7 @@ const saveBacklog = async () => {
     if (result?.data?.backlog_history) backlogModal.value.row.backlog_history = result.data.backlog_history
     $('#backlogModalPM').modal('hide')
     localStorage.removeItem('dashboard_data_cache')
+    localStorage.removeItem('dashboard_data_cache_v3')
     window.dispatchEvent(new CustomEvent('dashboard:needs-refresh', {
       detail: { source: 'log-pm-backlog-update', log_no: backlogModal.value.row.log_no }
     }))
@@ -343,6 +344,7 @@ const saveToLogAktivitas = async (row) => {
       showConfirmButton: false
     })
     localStorage.removeItem('dashboard_data_cache')
+    localStorage.removeItem('dashboard_data_cache_v3')
     window.dispatchEvent(new CustomEvent('dashboard:needs-refresh', {
       detail: { source: 'log-pm-create', no_id: row['No.ID'], cal_id: `${row['No.ID']}.PM` }
     }))

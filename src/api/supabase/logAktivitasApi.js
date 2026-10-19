@@ -329,9 +329,20 @@ export const logAktivitasApi = {
         }))
       })
 
+      // ✅ Precompute lastExecMap once (sorted by execute_date descending)
+      const lastExecMap = {}
+      ;(allLogData || [])
+        .filter(l => l.jenis === 'Kalibrasi' && l.execute_date)
+        .sort((a, b) => new Date(b.execute_date) - new Date(a.execute_date))
+        .forEach(l => {
+          if (l.calibration_id && !lastExecMap[l.calibration_id]) {
+            lastExecMap[l.calibration_id] = l.execute_date
+          }
+        })
+
       // ✅ Process each month using the SAME fetched data (reuse, not refetch)
       const kalibrasiMonthly = months.map((month, index) => {
-        return this.processMonthlyData(month, index, parseInt(year), kalibrasiData, alatData, allLogData)
+        return this.processMonthlyData(month, index, parseInt(year), kalibrasiData, alatData, allLogData, lastExecMap)
       })
 
       const pmMonthly = months.map((month, index) => {
@@ -437,7 +448,7 @@ export const logAktivitasApi = {
   },
 
   // ✅ Helper: Process monthly kalibrasi data
-  processMonthlyData(month, index, year, kalibrasiData, alatData, allLogData) {
+  processMonthlyData(month, index, year, kalibrasiData, alatData, allLogData, precomputedLastExecMap = null) {
     const monthShort = month.substring(0, 3).toLowerCase()
     const isPast = isPastPeriod(index, year)
 
@@ -445,12 +456,17 @@ export const logAktivitasApi = {
     const statusMap = {}
     ;(alatData || []).forEach(d => { statusMap[d.no_id] = d.status })
 
-    const lastExecMap = {}
-    ;(allLogData || []).filter(l => l.jenis === 'Kalibrasi').forEach(l => {
-      if (l.calibration_id && !lastExecMap[l.calibration_id]) {
-        lastExecMap[l.calibration_id] = l.execute_date
-      }
-    })
+    const lastExecMap = precomputedLastExecMap || {}
+    if (!precomputedLastExecMap) {
+      ;(allLogData || [])
+        .filter(l => l.jenis === 'Kalibrasi' && l.execute_date)
+        .sort((a, b) => new Date(b.execute_date) - new Date(a.execute_date))
+        .forEach(l => {
+          if (l.calibration_id && !lastExecMap[l.calibration_id]) {
+            lastExecMap[l.calibration_id] = l.execute_date
+          }
+        })
+    }
 
     const parseIntervalMonths = (intField) => {
       if (!intField) return 12
@@ -461,26 +477,6 @@ export const logAktivitasApi = {
       const num = parseInt(str); if (!isNaN(num) && num > 0) return num
       return 12
     }
-
-    // Filter valid items untuk bulan ini
-    const validItems = (kalibrasiData || []).filter(item => {
-      if (!item.due_date || !item.due_date.toLowerCase().includes(monthShort)) return false
-      if (statusMap[item.no_id] === 'obsolete') return false
-
-      const intervalMonths = parseIntervalMonths(item.int)
-      if (intervalMonths <= 12) return true // Yearly: selalu tampil
-
-      // Multi-yearly logic
-      const intervalYears = Math.round(intervalMonths / 12)
-      const lastExec = lastExecMap[item.calibration_id]
-
-      if (!lastExec) return true // Belum pernah: tampil
-
-      const lastYear = new Date(lastExec).getFullYear()
-      const yearsDiff = year - lastYear
-
-      return yearsDiff > 0 && yearsDiff % intervalYears === 0
-    })
 
     // ✅ Hitung SEMUA log aktivitas kalibrasi di bulan ini
     // FIX: Use string matching as primary method, Date parsing as fallback
@@ -508,8 +504,45 @@ export const logAktivitasApi = {
         return false
       }
     })
-    
-    const executed = allKalibrasiLogsThisMonth.length
+
+    // Filter valid items untuk bulan ini (sinkron dengan getKalibrasiForPeriod)
+    const validItems = (kalibrasiData || []).filter(item => {
+      if (!item.due_date || !item.due_date.toLowerCase().includes(monthShort)) return false
+      if (statusMap[item.no_id] === 'obsolete') return false
+
+      if (!isValidForPeriod(item.created_at, year, index)) return false
+
+      const intervalMonths = parseIntervalMonths(item.int)
+      if (intervalMonths <= 12) return true // Yearly: selalu tampil
+
+      // Multi-yearly: jika sudah ada log pada periode ini, berarti terjadwal & terlaksana di periode ini
+      const hasLogThisPeriod = allKalibrasiLogsThisMonth.some(l => 
+        (item.calibration_id && l.calibration_id === item.calibration_id) || (!item.calibration_id && l.no_id === item.no_id)
+      )
+      if (hasLogThisPeriod) return true
+
+      // Multi-yearly logic
+      const intervalYears = Math.round(intervalMonths / 12)
+      const lastExec = lastExecMap[item.calibration_id]
+
+      if (!lastExec) return true // Belum pernah: tampil
+
+      const lastYear = new Date(lastExec).getFullYear()
+      const yearsDiff = year - lastYear
+
+      return yearsDiff >= intervalYears && yearsDiff % intervalYears === 0
+    })
+
+    // Hitung berapa item terjadwal yang sudah dieksekusi (memiliki log bulan ini)
+    const executedScheduled = validItems.filter(item => 
+      allKalibrasiLogsThisMonth.some(l => 
+        (item.calibration_id && l.calibration_id === item.calibration_id) || (!item.calibration_id && l.no_id === item.no_id)
+      )
+    ).length
+
+    // executed: untuk periode sekarang/future gunakan executedScheduled agar sinkron dengan status 'Selesai' di log aktivitas
+    // untuk periode lampau (past), jika ada log tanpa jadwal tetap tampilkan real activity
+    const executed = isPast ? allKalibrasiLogsThisMonth.length : executedScheduled
 
     // ✅ LOGIC UNTUK COUNT:
     // - Jika bulan sudah lewat (past period): count = executed (show REAL activity)
@@ -557,6 +590,7 @@ export const logAktivitasApi = {
     const monthData = (alatData || []).filter(item => {
       if (item.pm_yn !== 'Y') return false
       if (item.status === 'obsolete') return false
+      if (!isValidForPeriod(item.created_at, year, index)) return false
       if (item['6_monthly'] && item['6_monthly'] !== 'NA' && item['6_monthly'] !== '-') {
         if (item['6_monthly'].toLowerCase().includes(monthShort)) return true
       }
@@ -628,8 +662,14 @@ export const logAktivitasApi = {
       }
     })
     
-    const executed = allPMLogsThisMonth.length
-    
+    // Hitung berapa alat terjadwal yang sudah dieksekusi di bulan ini
+    const executedScheduled = monthData.filter(item => 
+      allPMLogsThisMonth.some(l => l.no_id === item.no_id)
+    ).length
+
+    // executed: untuk periode sekarang/future gunakan executedScheduled agar sinkron dengan status 'Selesai' di log aktivitas
+    const executed = isPastPeriodCheck ? allPMLogsThisMonth.length : executedScheduled
+
     // ✅ CRITICAL DEBUG: Manual check EVERY single PM log for August
     if (month === 'August') {
       const allPMLogs = (allLogData || []).filter(l => l.jenis === 'PM')
