@@ -1,5 +1,5 @@
 <script setup>
-import { ref, onMounted, computed, nextTick } from 'vue'
+import { ref, onMounted, computed, nextTick, watch } from 'vue'
 import { useDaftarAlat } from '@/composables/useDaftarAlat'
 import { useFrontendConfig } from '@/composables/useConfig'
 import { usePermissions } from '@/composables/usePermissions'
@@ -10,6 +10,112 @@ import { printService } from '@/services/printService'
 const { tools, loading, fetchList, saveTool, isSaving, deleteTool, bulkDeleteTools, statusFilter, setStatusFilter, initDataTable } = useDaftarAlat()
 const { config } = useFrontendConfig()
 const permission = usePermissions()
+
+// === FILTER STATE ===
+const isFilterExpanded = ref(false) // Default tertutup saat halaman dibuka
+const selectedMonth = ref('')
+const selectedScheduleType = ref('all') // 'all' | 'pm' | 'calib'
+const filterPM = ref('all') // 'all' | 'Y' | 'N'
+const filterCalib = ref('all') // 'all' | 'Y' | 'N'
+
+const toggleFilter = () => {
+  isFilterExpanded.value = !isFilterExpanded.value
+}
+
+// Daftar pilihan bulan
+const monthOptions = [
+  { value: 'January', label: 'Januari' },
+  { value: 'February', label: 'Februari' },
+  { value: 'March', label: 'Maret' },
+  { value: 'April', label: 'April' },
+  { value: 'May', label: 'Mei' },
+  { value: 'June', label: 'Juni' },
+  { value: 'July', label: 'Juli' },
+  { value: 'August', label: 'Agustus' },
+  { value: 'September', label: 'September' },
+  { value: 'October', label: 'Oktober' },
+  { value: 'November', label: 'November' },
+  { value: 'December', label: 'Desember' }
+]
+
+// Helper untuk memeriksa apakah field jadwal cocok dengan bulan target
+const matchMonthField = (fieldValue, targetMonth) => {
+  if (!fieldValue || fieldValue === 'NA' || fieldValue === '-') return false
+  const fieldStr = String(fieldValue).toLowerCase()
+  const mShort = targetMonth.substring(0, 3).toLowerCase()
+  const mFull = targetMonth.toLowerCase()
+  return fieldStr.includes(mShort) || fieldStr.includes(mFull)
+}
+
+// Helper untuk mencocokkan jadwal alat dengan bulan & tipe jadwal
+const matchesSchedule = (tool, targetMonth) => {
+  const hasPm6 = matchMonthField(tool.pm_6monthly, targetMonth)
+  const hasPmYearly = matchMonthField(tool.pm_yearly, targetMonth)
+  const hasCalib = matchMonthField(tool.calib_schedule, targetMonth)
+
+  if (selectedScheduleType.value === 'pm') {
+    return hasPm6 || hasPmYearly
+  } else if (selectedScheduleType.value === 'calib') {
+    return hasCalib
+  } else {
+    return hasPm6 || hasPmYearly || hasCalib
+  }
+}
+
+// Data alat setelah difilter
+const filteredTools = computed(() => {
+  let list = tools.value || []
+
+  // 1. Filter Bulan Jadwal (PM / Kalibrasi)
+  if (selectedMonth.value) {
+    list = list.filter(tool => matchesSchedule(tool, selectedMonth.value))
+  }
+
+  // 2. Filter Memerlukan PM (Y/N)
+  if (filterPM.value === 'Y') {
+    list = list.filter(tool => String(tool.pm_overall || '').toUpperCase() === 'Y')
+  } else if (filterPM.value === 'N') {
+    list = list.filter(tool => String(tool.pm_overall || '').toUpperCase() !== 'Y')
+  }
+
+  // 3. Filter Memerlukan Kalibrasi (Y/N)
+  if (filterCalib.value === 'Y') {
+    list = list.filter(tool => String(tool.calib_yesno || '').toUpperCase() === 'Y')
+  } else if (filterCalib.value === 'N') {
+    list = list.filter(tool => String(tool.calib_yesno || '').toUpperCase() !== 'Y')
+  }
+
+  return list
+})
+
+// Hitung berapa filter yang sedang aktif
+const activeFilterCount = computed(() => {
+  let count = 0
+  if (selectedMonth.value) count++
+  if (selectedMonth.value && selectedScheduleType.value !== 'all') count++
+  if (filterPM.value !== 'all') count++
+  if (filterCalib.value !== 'all') count++
+  return count
+})
+
+// Reset semua filter ke default
+const resetFilters = () => {
+  selectedMonth.value = ''
+  selectedScheduleType.value = 'all'
+  filterPM.value = 'all'
+  filterCalib.value = 'all'
+}
+
+// Unique key untuk re-render tabel saat filter berubah
+const tableRenderKey = computed(() => {
+  return `${statusFilter.value}_${selectedMonth.value}_${selectedScheduleType.value}_${filterPM.value}_${filterCalib.value}_${bulkDeleteMode.value}`
+})
+
+// Watch filter changes to reinitialize DataTables
+watch([selectedMonth, selectedScheduleType, filterPM, filterCalib], async () => {
+  await nextTick()
+  await initDataTable()
+}, { flush: 'post' })
 
 const {
   importing,
@@ -109,7 +215,7 @@ const confirmImport = async () => {
 
 // Print Daftar Alat
 const handlePrint = () => {
-  printService.printDaftarAlat(tools.value)
+  printService.printDaftarAlat(filteredTools.value)
 }
 
 const isLoggedIn = computed(() => permission.isLoggedIn.value)
@@ -149,16 +255,16 @@ const toggleToolSelection = (no) => {
 
 // ✅ Toggle select all
 const toggleSelectAll = () => {
-  if (selectedTools.value.length === tools.value.length) {
+  if (selectedTools.value.length === filteredTools.value.length) {
     selectedTools.value = []
   } else {
-    selectedTools.value = tools.value.map(tool => tool.no)
+    selectedTools.value = filteredTools.value.map(tool => tool.no)
   }
 }
 
 // ✅ Check if all tools are selected
 const isAllSelected = computed(() => {
-  return tools.value.length > 0 && selectedTools.value.length === tools.value.length
+  return filteredTools.value.length > 0 && selectedTools.value.length === filteredTools.value.length
 })
 
 // ✅ Bulk delete handler
@@ -418,9 +524,9 @@ onMounted(async () => {
       </div>
     </div>
 
-    <!-- Baris 2: Filter + Export/Import (hanya untuk admin) -->
-    <div class="header-actions d-flex justify-content-end" v-if="isAdmin">
-      <!-- Filter toggle -->
+    <!-- Baris 2: Filter Status + Export/Import -->
+    <div class="header-actions d-flex justify-content-end align-items-center flex-wrap gap-2">
+      <!-- Filter toggle status alat (untuk semua pengguna) -->
       <div class="btn-group btn-group-sm mr-2" role="group">
         <button
           type="button"
@@ -442,9 +548,9 @@ onMounted(async () => {
         >Semua</button>
       </div>
       
-      <!-- Export / Import -->
-      <div class="btn-group btn-group-sm">
-        <button class="btn btn-outline-success" @click="exportDaftarAlat(tools)" title="Export ke Excel">
+      <!-- Export / Import (hanya admin) -->
+      <div class="btn-group btn-group-sm" v-if="isAdmin">
+        <button class="btn btn-outline-success" @click="exportDaftarAlat(filteredTools)" title="Export ke Excel">
           <i class="fas fa-file-excel"></i><span class="btn-label-mobile ml-1">Export</span>
         </button>
         <button class="btn btn-outline-secondary" @click="downloadDaftarAlatTemplate" title="Download template">
@@ -461,6 +567,114 @@ onMounted(async () => {
 
     <section class="content">
       <div class="container-fluid">
+
+        <!-- PANEL CARD FILTER -->
+        <div class="card card-outline card-info mb-3 filter-panel shadow-sm no-print" :class="{ 'collapsed-card': !isFilterExpanded }">
+          <div class="card-header py-2 d-flex justify-content-between align-items-center cursor-pointer" @click="toggleFilter" title="Klik untuk membuka / menutup filter">
+            <h3 class="card-title font-weight-bold d-flex align-items-center mb-0" style="font-size: 0.95rem;">
+              <i class="fas fa-filter text-info mr-2"></i>
+              <span>Filter Data Alat</span>
+              <span v-if="activeFilterCount > 0" class="badge badge-info ml-2">
+                {{ activeFilterCount }} Filter Aktif
+              </span>
+              <span class="badge badge-light border ml-2 text-muted">
+                Menampilkan <strong>{{ filteredTools.length }}</strong> dari <strong>{{ tools.length }}</strong> alat
+              </span>
+            </h3>
+            <div class="card-tools d-flex align-items-center" @click.stop>
+              <button 
+                v-if="activeFilterCount > 0" 
+                class="btn btn-xs btn-outline-danger mr-2" 
+                @click="resetFilters" 
+                title="Reset semua filter"
+              >
+                <i class="fas fa-undo mr-1"></i>Reset Filter
+              </button>
+              <button 
+                type="button" 
+                class="btn btn-tool" 
+                @click="toggleFilter"
+                :title="isFilterExpanded ? 'Tutup Filter' : 'Buka Filter'"
+              >
+                <i :class="isFilterExpanded ? 'fas fa-minus' : 'fas fa-plus'"></i>
+              </button>
+            </div>
+          </div>
+          <div v-show="isFilterExpanded" class="card-body py-3">
+            <div class="row">
+              <!-- 1. Filter Bulan Jadwal -->
+              <div class="col-lg-3 col-md-6 col-sm-12 mb-2">
+                <label class="form-label text-muted small font-weight-bold mb-1">
+                  <i class="fas fa-calendar-alt text-info mr-1"></i>Bulan Jadwal:
+                </label>
+                <select v-model="selectedMonth" class="form-control form-control-sm custom-select">
+                  <option value="">-- Semua Bulan --</option>
+                  <option v-for="m in monthOptions" :key="m.value" :value="m.value">
+                    {{ m.label }} ({{ m.value }})
+                  </option>
+                </select>
+              </div>
+
+              <!-- 2. Tipe Jadwal (Aktif bila bulan dipilih) -->
+              <div class="col-lg-3 col-md-6 col-sm-12 mb-2">
+                <label class="form-label text-muted small font-weight-bold mb-1">
+                  <i class="fas fa-tasks text-info mr-1"></i>Tipe Jadwal Bulan:
+                </label>
+                <select 
+                  v-model="selectedScheduleType" 
+                  class="form-control form-control-sm custom-select"
+                  :disabled="!selectedMonth"
+                >
+                  <option value="all">Semua (PM & Kalibrasi)</option>
+                  <option value="pm">Hanya Jadwal PM</option>
+                  <option value="calib">Hanya Jadwal Kalibrasi</option>
+                </select>
+              </div>
+
+              <!-- 3. Filter Memerlukan PM -->
+              <div class="col-lg-3 col-md-6 col-sm-12 mb-2">
+                <label class="form-label text-muted small font-weight-bold mb-1">
+                  <i class="fas fa-tools text-warning mr-1"></i>Perawatan PM:
+                </label>
+                <select v-model="filterPM" class="form-control form-control-sm custom-select">
+                  <option value="all">Semua</option>
+                  <option value="Y">Hanya Ada PM (Y)</option>
+                  <option value="N">Tanpa PM (N)</option>
+                </select>
+              </div>
+
+              <!-- 4. Filter Memerlukan Kalibrasi -->
+              <div class="col-lg-3 col-md-6 col-sm-12 mb-2">
+                <label class="form-label text-muted small font-weight-bold mb-1">
+                  <i class="fas fa-balance-scale text-success mr-1"></i>Kalibrasi:
+                </label>
+                <select v-model="filterCalib" class="form-control form-control-sm custom-select">
+                  <option value="all">Semua</option>
+                  <option value="Y">Hanya Ada Kalibrasi (Y)</option>
+                  <option value="N">Tanpa Kalibrasi (N)</option>
+                </select>
+              </div>
+            </div>
+
+            <!-- Chips / Tag Filter Aktif -->
+            <div v-if="activeFilterCount > 0" class="filter-chips d-flex align-items-center flex-wrap gap-2 mt-2 pt-2 border-top">
+              <small class="text-muted font-weight-bold mr-2"><i class="fas fa-tags mr-1"></i>Filter Aktif:</small>
+              <span v-if="selectedMonth" class="badge badge-info p-1 px-2 cursor-pointer" @click="selectedMonth = ''" title="Hapus filter bulan">
+                Bulan: {{ selectedMonth }} <i class="fas fa-times ml-1"></i>
+              </span>
+              <span v-if="selectedMonth && selectedScheduleType !== 'all'" class="badge badge-secondary p-1 px-2 cursor-pointer" @click="selectedScheduleType = 'all'" title="Reset tipe jadwal">
+                Tipe: {{ selectedScheduleType === 'pm' ? 'Jadwal PM' : 'Jadwal Kalibrasi' }} <i class="fas fa-times ml-1"></i>
+              </span>
+              <span v-if="filterPM !== 'all'" class="badge badge-warning p-1 px-2 cursor-pointer" @click="filterPM = 'all'" title="Hapus filter PM">
+                PM: {{ filterPM === 'Y' ? 'Ada PM (Y)' : 'Tanpa PM (N)' }} <i class="fas fa-times ml-1"></i>
+              </span>
+              <span v-if="filterCalib !== 'all'" class="badge badge-success p-1 px-2 cursor-pointer" @click="filterCalib = 'all'" title="Hapus filter Kalibrasi">
+                Kalibrasi: {{ filterCalib === 'Y' ? 'Ada Kalibrasi (Y)' : 'Tanpa Kalibrasi (N)' }} <i class="fas fa-times ml-1"></i>
+              </span>
+            </div>
+          </div>
+        </div>
+
         <div class="card">
           <div class="card-body">
             <div v-if="loading" class="text-center py-4">
@@ -491,7 +705,10 @@ onMounted(async () => {
                   <i class="fas fa-trash mr-1"></i>Delete {{ selectedTools.length }} Alat
                 </button>
               </div>
-              <table class="table table-bordered table-hover daftar-alat-table">
+
+              <!-- Wrapper dengan key agar DataTables diinisialisasi ulang bersih saat filter berubah -->
+              <div :key="tableRenderKey" class="table-responsive">
+                <table class="table table-bordered table-hover daftar-alat-table">
                   <thead>
                     <tr>
                       <th rowspan="2" class="align-middle checkbox-column" :style="bulkDeleteMode ? '' : 'width:0!important;min-width:0!important;max-width:0!important;padding:0!important;'">
@@ -533,7 +750,7 @@ onMounted(async () => {
                   </tr>
                 </thead>
                 <tbody>
-                  <tr v-for="(tool, index) in tools" :key="tool.no" :class="{'table-secondary': tool.status === 'obsolete'}">
+                  <tr v-for="(tool, index) in filteredTools" :key="tool.no" :class="{'table-secondary': tool.status === 'obsolete'}">
                     <td class="text-center checkbox-column" :style="bulkDeleteMode ? '' : 'width:0!important;min-width:0!important;max-width:0!important;padding:0!important;'">
                       <input
                         type="checkbox"
@@ -589,6 +806,7 @@ onMounted(async () => {
                   </tr>
                 </tbody>
               </table>
+              </div>
             </div>
           </div>
         </div>
@@ -1081,6 +1299,49 @@ onMounted(async () => {
     flex-wrap: wrap;
     gap: 0.5rem;
   }
+}
+
+/* Filter Panel Styling */
+.filter-panel {
+  border-radius: 0.5rem;
+  border-top: 3px solid #17a2b8;
+}
+
+.filter-panel .card-header {
+  background-color: #f8fbfd;
+  border-bottom: 1px solid #e9f2f8;
+}
+
+.filter-panel .card-header.cursor-pointer {
+  cursor: pointer;
+  user-select: none;
+  transition: background-color 0.15s ease;
+}
+
+.filter-panel .card-header.cursor-pointer:hover {
+  background-color: #f0f7fb;
+}
+
+.filter-panel .custom-select {
+  border-radius: 0.25rem;
+  font-size: 0.85rem;
+  border-color: #ced4da;
+}
+
+.filter-panel .custom-select:focus {
+  border-color: #17a2b8;
+  box-shadow: 0 0 0 0.2rem rgba(23, 162, 184, 0.25);
+}
+
+.filter-chips .badge {
+  font-size: 0.78rem;
+  font-weight: 500;
+  transition: transform 0.15s ease, opacity 0.15s ease;
+}
+
+.filter-chips .badge:hover {
+  transform: scale(1.05);
+  opacity: 0.9;
 }
 
 /* ✅ Sembunyikan label teks di layar kecil (opsional) */
