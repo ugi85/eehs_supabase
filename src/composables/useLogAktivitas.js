@@ -3,7 +3,7 @@ import { ref, computed, nextTick } from 'vue'
 import { logAktivitasApi } from '@/api'
 
 // ✅ KONSTANTA: Cache key dashboard (harus sama dengan yang di useDashboard.js)
-const DASHBOARD_CACHE_KEY = 'dashboard_data_cache_v3'
+const DASHBOARD_CACHE_KEY = 'dashboard_data_cache_v4'
 
 export function useLogAktivitas() {
 

@@ -50,6 +50,14 @@ function isValidForPeriod(createdAt, selectedYear, selectedMonthIndex) {
       console.warn('[isValidForPeriod] Invalid createdAt date:', createdAt)
       return true // If invalid, assume valid (fail-safe)
     }
+
+    // ✅ Baseline migration data:
+    // Kolom created_at ditambahkan ke database pada 12 April 2026 via migrasi audit trail dengan DEFAULT NOW().
+    // Akibatnya seluruh master data awal kalibrasi dan daftar alat terisi timestamp 2026-04-12/13.
+    // Data baseline ini merupakan data pabrik yang sudah aktif sejak awal tahun (Januari 2026).
+    if (selectedYear === 2026 && createdDate <= new Date('2026-04-15T23:59:59.999Z')) {
+      return true
+    }
     
     // Calculate end of selected period
     // Example: Aug 2026 (monthIndex=7) → 2026-08-31 23:59:59
@@ -510,16 +518,16 @@ export const logAktivitasApi = {
       if (!item.due_date || !item.due_date.toLowerCase().includes(monthShort)) return false
       if (statusMap[item.no_id] === 'obsolete') return false
 
-      if (!isValidForPeriod(item.created_at, year, index)) return false
-
-      const intervalMonths = parseIntervalMonths(item.int)
-      if (intervalMonths <= 12) return true // Yearly: selalu tampil
-
-      // Multi-yearly: jika sudah ada log pada periode ini, berarti terjadwal & terlaksana di periode ini
+      // Multi-yearly / Pelaksanaan: jika sudah ada log pada periode ini, berarti terjadwal & terlaksana di periode ini
       const hasLogThisPeriod = allKalibrasiLogsThisMonth.some(l => 
         (item.calibration_id && l.calibration_id === item.calibration_id) || (!item.calibration_id && l.no_id === item.no_id)
       )
       if (hasLogThisPeriod) return true
+
+      if (!isValidForPeriod(item.created_at, year, index)) return false
+
+      const intervalMonths = parseIntervalMonths(item.int)
+      if (intervalMonths <= 12) return true // Yearly: selalu tampil
 
       // Multi-yearly logic
       const intervalYears = Math.round(intervalMonths / 12)
@@ -586,21 +594,7 @@ export const logAktivitasApi = {
     const monthShort = month.substring(0, 3).toLowerCase()
     const isPastPeriodCheck = isPastPeriod(index, year)
 
-    // Filter equipment dengan jadwal PM untuk bulan ini
-    const monthData = (alatData || []).filter(item => {
-      if (item.pm_yn !== 'Y') return false
-      if (item.status === 'obsolete') return false
-      if (!isValidForPeriod(item.created_at, year, index)) return false
-      if (item['6_monthly'] && item['6_monthly'] !== 'NA' && item['6_monthly'] !== '-') {
-        if (item['6_monthly'].toLowerCase().includes(monthShort)) return true
-      }
-      if (item.yearly && item.yearly !== 'NA' && item.yearly !== '-') {
-        if (item.yearly.toLowerCase().includes(monthShort)) return true
-      }
-      return false
-    })
-
-    // ✅ FIX CRITICAL: Hitung SEMUA log aktivitas PM di bulan ini
+    // ✅ Hitung SEMUA log aktivitas PM di bulan ini
     // Multiple fallback methods to catch ALL date formats
     const monthNum = String(index + 1).padStart(2, '0') // '08' for August
     const yearStr = String(year) // '2026'
@@ -661,7 +655,30 @@ export const logAktivitasApi = {
         return false
       }
     })
-    
+
+    // Filter equipment dengan jadwal PM untuk bulan ini
+    const monthData = (alatData || []).filter(item => {
+      if (item.pm_yn !== 'Y') return false
+      if (item.status === 'obsolete') return false
+
+      let hasSchedule = false
+      if (item['6_monthly'] && item['6_monthly'] !== 'NA' && item['6_monthly'] !== '-') {
+        if (item['6_monthly'].toLowerCase().includes(monthShort)) hasSchedule = true
+      }
+      if (item.yearly && item.yearly !== 'NA' && item.yearly !== '-') {
+        if (item.yearly.toLowerCase().includes(monthShort)) hasSchedule = true
+      }
+      if (!hasSchedule) return false
+
+      // Jika ada log eksekusi pada periode ini, selalu tampilkan
+      const hasLogThisPeriod = allPMLogsThisMonth.some(l => l.no_id === item.no_id)
+      if (hasLogThisPeriod) return true
+
+      if (!isValidForPeriod(item.created_at, year, index)) return false
+
+      return true
+    })
+
     // Hitung berapa alat terjadwal yang sudah dieksekusi di bulan ini
     const executedScheduled = monthData.filter(item => 
       allPMLogsThisMonth.some(l => l.no_id === item.no_id)
@@ -877,7 +894,13 @@ export const logAktivitasApi = {
         if (!item.due_date) return false
         if (!item.due_date.toLowerCase().includes(monthShort)) return false
 
-        // ✅ NEW: Check if data was created before or during the selected period
+        // Multi-yearly / Pelaksanaan: jika sudah ada log pada periode ini, selalu sertakan
+        const hasLogThisPeriod = (logData || []).some(l => 
+          (item.calibration_id && l.calibration_id === item.calibration_id) || (!item.calibration_id && l.no_id === item.no_id)
+        )
+        if (hasLogThisPeriod) return true
+
+        // ✅ Check if data was created before or during the selected period
         // This prevents newly imported data from appearing in past periods
         // Use kalibrasi.created_at (from kalibrasi table audit trail)
         if (!isValidForPeriod(item.created_at, selectedYear_int, monthIndex)) {
@@ -886,11 +909,6 @@ export const logAktivitasApi = {
 
         const intervalMonths = parseIntervalMonths(item.int)
         if (intervalMonths <= 12) return true
-
-        const hasLogThisPeriod = (logData || []).some(l => 
-          l.calibration_id === item.calibration_id && l.jenis === 'Kalibrasi' && l.execute_date && l.execute_date.includes(`${year}-${monthNum}`)
-        )
-        if (hasLogThisPeriod) return true
 
         const intervalYears = Math.round(intervalMonths / 12)
         const lastExec = lastExecMap[item.calibration_id]
@@ -979,6 +997,10 @@ export const logAktivitasApi = {
       const isPastPeriod = selectedDate < new Date(now.getFullYear(), now.getMonth(), 1)
       const monthShort = month.substring(0, 3).toLowerCase()
 
+      // ✅ FIX: Fetch logData dulu sebelum filter agar bisa cek hasLogThisPeriod
+      const { data: logData, error: logError } = await supabase.from('logaktivitas').select('*').eq('jenis', 'PM').gte('execute_date', `${year}-${monthNum}-01`).lte('execute_date', `${year}-${monthNum}-31`)
+      if (logError) throw logError
+
       const filtered = (alatData || []).filter(item => {
         // Check if equipment has PM schedule for this month
         let hasScheduleThisMonth = false
@@ -992,7 +1014,11 @@ export const logAktivitasApi = {
         
         if (!hasScheduleThisMonth) return false
 
-        // ✅ NEW: Check if data was created before or during the selected period
+        // Pelaksanaan: jika sudah ada log pada periode ini, selalu sertakan
+        const hasLogThisPeriod = (logData || []).some(l => l.no_id === item.no_id)
+        if (hasLogThisPeriod) return true
+
+        // ✅ Check if data was created before or during the selected period
         // This prevents newly imported equipment from appearing in past PM periods
         // Use daftaralat.created_at (from daftaralat table audit trail)
         if (!isValidForPeriod(item.created_at, parseInt(year), monthIndex)) {
@@ -1001,9 +1027,6 @@ export const logAktivitasApi = {
 
         return true
       })
-
-      const { data: logData, error: logError } = await supabase.from('logaktivitas').select('*').eq('jenis', 'PM').gte('execute_date', `${year}-${monthNum}-01`).lte('execute_date', `${year}-${monthNum}-31`)
-      if (logError) throw logError
 
       const result = filtered.map(item => {
         const log = (logData || []).find(l => l.no_id === item.no_id)
